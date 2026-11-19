@@ -176,7 +176,7 @@ def test_index_and_static_served(client_and_collector):
     client, _ = client_and_collector
     r = client.get("/nahiarhdlog/", params={"token": TOKEN})
     assert r.status_code == 200
-    assert "nahiarhdlog" in r.text
+    assert "<title>0x1LOG</title>" in r.text
     assert 'rel="icon"' in r.text
     assert "static/favicon.svg" in r.text
     assert 'role="tablist"' in r.text

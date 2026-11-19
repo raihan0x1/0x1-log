@@ -1,15 +1,19 @@
-# nahiarhdlog
+<a name="nahiarhdlog"></a>
 
-[![CI](https://github.com/nahiarhd/nahiarhdlog/actions/workflows/ci.yml/badge.svg)](https://github.com/nahiarhd/nahiarhdlog/actions)
+# 0x1LOG
+
+[![CI](https://github.com/raihan0x1/nahiarhdlog/actions/workflows/ci.yml/badge.svg)](https://github.com/raihan0x1/nahiarhdlog/actions)
 [![PyPI version](https://img.shields.io/pypi/v/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
 [![Python Version](https://img.shields.io/pypi/pyversions/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Embedded observability for FastAPI — searchable logs, error tracking, alerts, metrics, tracing, and a token-locked dashboard. Zero infrastructure: everything lives in one SQLite file.
 
-![nahiarhdlog dashboard](https://raw.githubusercontent.com/nahiarhd/nahiarhdlog/main/docs/dashboard.png)
+![0x1LOG dashboard](https://raw.githubusercontent.com/raihan0x1/nahiarhdlog/main/docs/dashboard.png)
 
-## Why nahiarhdlog?
+<a name="why-nahiarhdlog"></a>
+
+## Why 0x1LOG?
 
 - **No infrastructure.** No ELK, no agents, no SaaS — `pip install` and you have history, search, and a UI.
 - **Embedded dashboard.** Your logs live at `/nahiarhdlog` inside your own app, behind your own token.
@@ -21,6 +25,8 @@ Embedded observability for FastAPI — searchable logs, error tracking, alerts, 
 Four steps. Nothing else is required for a FastAPI app.
 
 ### 1. Install
+
+The published distribution is `nahiarhdlog`. Import it as `nahiarhdLOG`.
 
 ```bash
 uv add nahiarhdlog python-dotenv
@@ -36,7 +42,7 @@ Python ≥ 3.10. Logs land in `.nahiarhdlog/nahiarhdlog.db` (created automatical
 NAHILOG_TOKEN=change-me-to-a-long-random-string
 ```
 
-nahiarhdlog **does not read `.env` for you.** Your app loads it and passes the value in. That way the same package works in every project.
+0x1LOG **does not read `.env` for you.** Your app loads it and passes the value in. That way the same package works in every project.
 
 ### 3. One call in your app
 
@@ -290,6 +296,8 @@ uv run --no-sync python scripts/probe_perf.py --n 10000
 
 ## Changelog
 
+- **0.9.1** — Adopt the 0x1LOG brand in the README and dashboard. Existing installations use the same Python imports, dashboard URL, and SQLite path.
+
 - **0.6.3** — Fix SQLite `database is locked` under concurrent/multi-process writes via `BEGIN IMMEDIATE` transactions, exponential backoff retries with jitter (`max_retries=5`), increased busy timeout to 15s, and background writer thread crash resilience in `Collector`. Dashboard Live tail now persists preference in `localStorage`, auto-resumes smoothly when returning to the tab or closing detail dialogs, and no longer gets permanently disabled when clicking error cards.
 - **0.6.2** — Smart traceback truncation preserving head and tail at newline boundaries; max message size increased to 64KB; structured `exc_message` capture. Dashboard error details UI redesigned with bottom-up exception detection, syntax-highlighted frames, formatted error banner callout, and one-click traceback copying.
 - **0.6.1** — Log rows parse HTTP methods into chips (GET/POST/PUT/PATCH/DELETE + status + duration) and CRUD lines (`Deleted document …`) into action/entity/name/id. Successful deletes and updates get a gutter, not a full-row wash. Demo traffic includes document/folder DELETE and PATCH.
@@ -309,4 +317,4 @@ uv run --no-sync python scripts/probe_perf.py --n 10000
 
 MIT — see [LICENSE](LICENSE).
 
-By [Raihan Hidayatullah Djunaedi](https://github.com/nahiarhd) · [nahiarhd.com](https://nahiarhd.com) · PyPI [@nahiarhd](https://pypi.org/user/nahiarhd/)
+By [Raihan Hidayatullah Djunaedi](https://github.com/raihan0x1) · [nahiarhd.com](https://nahiarhd.com) · PyPI [@nahiarhd](https://pypi.org/user/nahiarhd/)

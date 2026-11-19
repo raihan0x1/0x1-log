@@ -324,7 +324,7 @@ _SETUP_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>nahiarhdlog — setup required</title>
+<title>0x1LOG — setup required</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -357,7 +357,7 @@ _SETUP_PAGE = """<!DOCTYPE html>
 <body>
   <div class="card">
     <h1>Dashboard is disabled</h1>
-    <p>nahiarhdlog is collecting logs, but no <code>dashboard_token</code> was set, so the dashboard stays off.</p>
+    <p>0x1LOG is collecting logs, but no <code>dashboard_token</code> was set, so the dashboard stays off.</p>
     <pre>observe(
     app,
     dashboard_token="long-random-secret",

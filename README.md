@@ -26,11 +26,11 @@ Four steps. Nothing else is required for a FastAPI app.
 
 ### 1. Install
 
-The published distribution is `nahiarhdlog`. Import it as `nahiarhdLOG`.
+Install 0x1LOG with `0x1-log`. It installs `nahiarhdlog`, which you import as `nahiarhdLOG`. Existing projects can keep installing `nahiarhdlog` directly.
 
 ```bash
-uv add nahiarhdlog python-dotenv
-# or: pip install nahiarhdlog python-dotenv
+uv add 0x1-log python-dotenv
+# or: pip install 0x1-log python-dotenv
 ```
 
 Python ≥ 3.10. Logs land in `.nahiarhdlog/nahiarhdlog.db` (created automatically).

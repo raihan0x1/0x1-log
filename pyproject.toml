@@ -33,10 +33,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/raihan0x1/nahiarhdlog"
-Documentation = "https://github.com/raihan0x1/nahiarhdlog#readme"
-Repository = "https://github.com/raihan0x1/nahiarhdlog"
-Issues = "https://github.com/raihan0x1/nahiarhdlog/issues"
+Homepage = "https://github.com/raihan0x1/0x1-log"
+Documentation = "https://github.com/raihan0x1/0x1-log#readme"
+Repository = "https://github.com/raihan0x1/0x1-log"
+Issues = "https://github.com/raihan0x1/0x1-log/issues"
 
 [project.optional-dependencies]
 dev = [

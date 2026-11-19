@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "0x1-log"
-version = "1.0.0"
-description = "0x1LOG installation alias for embedded observability for FastAPI"
+version = "1.1.0"
+description = "0x1LOG: embedded observability for FastAPI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -19,9 +19,9 @@ otel = ["nahiarhdlog[otel]>=0.9.1"]
 postgres = ["nahiarhdlog[postgres]>=0.9.1"]
 
 [project.urls]
-Homepage = "https://github.com/raihan0x1/nahiarhdlog"
-Documentation = "https://github.com/raihan0x1/nahiarhdlog#readme"
-Issues = "https://github.com/raihan0x1/nahiarhdlog/issues"
+Homepage = "https://github.com/raihan0x1/0x1-log"
+Documentation = "https://github.com/raihan0x1/0x1-log#readme"
+Issues = "https://github.com/raihan0x1/0x1-log/issues"
 
 [tool.setuptools]
-packages = []
+packages = ["ox1log"]

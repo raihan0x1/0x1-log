@@ -2,14 +2,14 @@
 
 # 0x1LOG
 
-[![CI](https://github.com/raihan0x1/nahiarhdlog/actions/workflows/ci.yml/badge.svg)](https://github.com/raihan0x1/nahiarhdlog/actions)
+[![CI](https://github.com/raihan0x1/0x1-log/actions/workflows/ci.yml/badge.svg)](https://github.com/raihan0x1/0x1-log/actions)
 [![PyPI version](https://img.shields.io/pypi/v/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
 [![Python Version](https://img.shields.io/pypi/pyversions/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Embedded observability for FastAPI — searchable logs, error tracking, alerts, metrics, tracing, and a token-locked dashboard. Zero infrastructure: everything lives in one SQLite file.
 
-![0x1LOG dashboard](https://raw.githubusercontent.com/raihan0x1/nahiarhdlog/main/docs/dashboard.png)
+![0x1LOG dashboard](https://raw.githubusercontent.com/raihan0x1/0x1-log/main/docs/dashboard.png)
 
 <a name="why-nahiarhdlog"></a>
 
@@ -26,7 +26,7 @@ Four steps. Nothing else is required for a FastAPI app.
 
 ### 1. Install
 
-Install 0x1LOG with `0x1-log`. It installs `nahiarhdlog`, which you import as `nahiarhdLOG`. Existing projects can keep installing `nahiarhdlog` directly.
+Install `0x1-log` 1.1 or newer to import `ox1log`. Existing projects can keep installing `nahiarhdlog` and importing `nahiarhdLOG`. The examples that use submodules still import from `nahiarhdLOG`.
 
 ```bash
 uv add 0x1-log python-dotenv
@@ -50,7 +50,7 @@ NAHILOG_TOKEN=change-me-to-a-long-random-string
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from nahiarhdLOG import observe
+from ox1log import observe
 
 load_dotenv()
 

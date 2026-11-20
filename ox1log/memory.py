@@ -18,10 +18,11 @@ from .grouping import truncate_message
 _MAX_LIMIT = 1000
 DEFAULT_MAX_EVENTS = 5000
 DEFAULT_MAX_MESSAGE_CHARS = 8192
-# Ring buffers keep whole events and every dashboard read parses them all: 1,090 spans
-# holding whole vector-search bodies (up to 632 KB) made one 5,000-event Redis list 581 MB
-# and each read took 5-19 s (2026-11-20).
-MAX_DATA_VALUE_CHARS = 16_384
+# Ring buffers keep whole events and dashboard reads parse every one, so an event's data
+# is capped as a whole and a ring holds at most max_events x this. Uncapped, 1,090 spans
+# with whole vector-search bodies (up to 632 KB) made one Redis list 581 MB (2026-11-20).
+MAX_EVENT_DATA_CHARS = 16_384
+_MIN_KEPT_CHARS = 512
 _DEFAULT_SOURCE = "default"
 
 
@@ -34,17 +35,32 @@ def event_source(event: dict[str, Any]) -> str:
     return _DEFAULT_SOURCE
 
 
-def _cap_value(value: Any) -> Any:
-    """Keep one data value under MAX_DATA_VALUE_CHARS, as a truncated JSON string if needed."""
-    if value is None or isinstance(value, (bool, int, float)):
+def _as_text(value: Any) -> str:
+    if isinstance(value, str):
         return value
     try:
-        text = value if isinstance(value, str) else json.dumps(value, default=str)
-    except ValueError:  # circular structure: leave it to the storage as before
-        return value
-    if len(text) <= MAX_DATA_VALUE_CHARS:
-        return value
-    return truncate_message(text, MAX_DATA_VALUE_CHARS)
+        return json.dumps(value, default=str)
+    except ValueError:  # circular structure
+        return str(value)
+
+
+def _cap_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Shrink the largest values, as truncated JSON text, until data fits MAX_EVENT_DATA_CHARS."""
+    texts = {
+        key: _as_text(value)
+        for key, value in data.items()
+        if value is not None and not isinstance(value, (bool, int, float))
+    }
+    total = sum(len(text) for text in texts.values())
+    for key in sorted(texts, key=lambda k: len(texts[k]), reverse=True):
+        excess = total - MAX_EVENT_DATA_CHARS
+        if excess <= 0:
+            break
+        keep = max(_MIN_KEPT_CHARS, len(texts[key]) - excess)
+        if keep < len(texts[key]):
+            data[key] = truncate_message(texts[key], keep)
+            total -= len(texts[key]) - len(data[key])
+    return data
 
 
 def normalize_event(
@@ -55,11 +71,7 @@ def normalize_event(
     if max_message_chars > 0 and len(text) > max_message_chars:
         text = truncate_message(text, max_message_chars)
     raw_data = event.get("data")
-    data = (
-        {key: _cap_value(value) for key, value in raw_data.items()}
-        if isinstance(raw_data, dict)
-        else {}
-    )
+    data = _cap_data(dict(raw_data)) if isinstance(raw_data, dict) else {}
     return {
         "id": event_id,
         "ts": float(event.get("ts") or time.time()),

@@ -385,9 +385,18 @@
     }).join("");
   }
   var lastInstance = null;
+  // A timer tick never stacks on its previous call: when each call scanned a 581 MB ring
+  // (>15 s), stacked ticks from open tabs took one host to ~35 GB and killed Redis (2026-11-20).
+  var polling = {};
+  function poll(key, run) {
+    if (document.hidden || polling[key]) return;
+    polling[key] = true;
+    var done = function () { polling[key] = false; };
+    run().then(done, done);
+  }
   function loadHealth() {
     var my = ++reqSeq.health;
-    api("/health").then(function (h) {
+    return api("/health").then(function (h) {
       if (my !== reqSeq.health) return;
       lastHealth = h;
       $("version").textContent = "v" + h.version;
@@ -409,7 +418,7 @@
   }
   function loadStatus() {
     var my = ++reqSeq.status;
-    api("/metrics", { window: 300, buckets: 1 }).then(function (res) {
+    return api("/metrics", { window: 300, buckets: 1 }).then(function (res) {
       if (my !== reqSeq.status || lastStatus.key === "down") return;
       lastStatus = serviceStatus(res.summary, "the last 5 minutes");
       renderStatusButton();
@@ -551,8 +560,8 @@
     renderChips();
     var body = $("logs-body");
     if (!silent) body.innerHTML = "<tr class='empty-row'><td colspan='5'><p class='meta loading'>Loading events</p></td></tr>";
-    loadVolume();
-    return api("/logs", params).then(function (res) {
+    var volume = loadVolume();
+    var rows = api("/logs", params).then(function (res) {
       if (my !== reqSeq.logs) return;
       var ids = res.items.map(function (e) { return String(e.id); }).join(",");
       if (silent && body.getAttribute("data-ids") === ids) {
@@ -577,6 +586,7 @@
       if (my !== reqSeq.logs) return;
       if (err.message !== "unauthorized") showBanner("Could not load events: " + err.message + ". Retry with Search.");
     });
+    return Promise.all([volume, rows]);
   }
   function renderLogsMeta(res) {
     var start = res.total === 0 ? 0 : res.offset + 1;
@@ -593,7 +603,7 @@
   function loadVolume() {
     var my = ++reqSeq.volume;
     var buckets = window.innerWidth < 760 ? 36 : 90;
-    api("/logs/histogram", Object.assign(logParams(), { buckets: buckets })).then(function (res) {
+    return api("/logs/histogram", Object.assign(logParams(), { buckets: buckets })).then(function (res) {
       if (my !== reqSeq.volume) return;
       lastVolume = res;
       renderVolume(res);
@@ -722,10 +732,9 @@
         state.logs.custom = null;
         $("f-range").value = String(state.logs.range || 0);
       }
-      loadLogs({ silent: true });
+      poll("live", function () { return loadLogs({ silent: true }); });
       state.liveTimer = setInterval(function () {
-        if (document.hidden || state.view !== "logs") return;
-        loadLogs({ silent: true });
+        if (state.view === "logs") poll("live", function () { return loadLogs({ silent: true }); });
       }, 2000);
     }
   }
@@ -1218,7 +1227,7 @@
     var my = ++reqSeq.metrics;
     hideBanner("error");
     // One call, one scan of the window (summary + series used to be two).
-    api("/metrics", { window: $("m-window").value, buckets: 60 }).then(function (res) {
+    return api("/metrics", { window: $("m-window").value, buckets: 60 }).then(function (res) {
       if (my !== reqSeq.metrics) return;
       lastMetrics = res;
       renderMetrics(res);
@@ -1232,7 +1241,7 @@
     if (state.metricsTimer) { clearInterval(state.metricsTimer); state.metricsTimer = null; }
     if (!on) return;
     state.metricsTimer = setInterval(function () {
-      if (!document.hidden && state.view === "metrics") loadMetrics();
+      if (state.view === "metrics") poll("metrics", loadMetrics);
     }, 15000);
   }
   $("m-refresh").addEventListener("click", loadMetrics);
@@ -1485,8 +1494,8 @@
     });
   });
   initToken();
-  loadHealth();
-  loadStatus();
+  poll("health", loadHealth);
+  poll("status", loadStatus);
   var savedLive = readLocal("nhl_live");
   if (savedLive === null || savedLive === "1") setLive(true);
   else loadLogs();
@@ -1494,8 +1503,7 @@
   $("m-auto").checked = autoMetrics;
   setMetricsAuto(autoMetrics);
   setInterval(function () {
-    if (document.hidden) return;
-    loadHealth();
-    loadStatus();
+    poll("health", loadHealth);
+    poll("status", loadStatus);
   }, 15000);
 })();

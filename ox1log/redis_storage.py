@@ -126,6 +126,9 @@ class RedisStorage:
     def _list_key(self, source: str) -> str:
         return f"{self.key_prefix}:src:{source}"
 
+    def _request_sources_key(self) -> str:
+        return f"{self.key_prefix}:request_sources"
+
     def insert_many(
         self, events: Iterable[dict[str, Any]], max_retries: int = 5
     ) -> int:
@@ -138,14 +141,21 @@ class RedisStorage:
         start_id = end_id - len(items) + 1
 
         by_source: dict[str, list[str]] = {}
+        request_sources: set[str] = set()
         for idx, raw in enumerate(items):
             ev = normalize_event(raw, start_id + idx, self.max_message_chars)
             src = event_source(ev)
             payload = json.dumps(ev, separators=(",", ":"), default=str)
             by_source.setdefault(src, []).append(payload)
+            if ev["type"] == "request":
+                request_sources.add(src)
 
         pipe = self._client.pipeline(transaction=False)
         sources_key = self._sources_key()
+        if request_sources:
+            pipe.sadd(self._request_sources_key(), *request_sources)
+            if self.ttl_seconds > 0:
+                pipe.expire(self._request_sources_key(), self.ttl_seconds)
         for src, payloads in by_source.items():
             list_key = self._list_key(src)
             # LPUSH inserts left-to-right so the last (newest) item lands at index 0.
@@ -381,8 +391,12 @@ class RedisStorage:
     def fetch_requests(
         self, since: float | None = None, until: float | None = None
     ) -> list[dict[str, Any]]:
+        # The dashboard polls metrics every 15 s per tab: read only sources that hold requests,
+        # never a worker's ring (in lite mode, with no request capture, nothing at all).
+        sources = sorted(_decode_str(s) for s in self._client.smembers(self._request_sources_key()) or ())
+        events = [ev for src in sources for ev in self._read_source_events(src)]
         rows = []
-        for ev in self._read_events():
+        for ev in events:
             if ev.get("type") != "request":
                 continue
             ts = float(ev["ts"])

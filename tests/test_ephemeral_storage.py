@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
 import pytest
 
-from ox1log.memory import MAX_DATA_VALUE_CHARS, MemoryStorage
+from ox1log.memory import MAX_EVENT_DATA_CHARS, MemoryStorage
 from ox1log.query import LogFilter, count_logs, get_event, list_sources, search_logs
 from ox1log.redis_storage import RedisStorage
 from ox1log.storage import SQLiteStorage
@@ -244,15 +245,42 @@ def test_sqlite_storage_supports_source_after_id_and_list_sources(tmp_path):
         storage.close()
 
 
-def test_oversized_data_values_are_truncated_but_small_ones_kept():
-    # 1,090 spans holding whole vector-search bodies made one Redis list 581 MB (2026-11-20).
+def test_event_data_is_capped_as_a_whole_and_small_fields_survive():
+    # 1,090 spans holding whole vector-search bodies made one Redis list 581 MB (2026-11-20);
+    # a per-field cap still let an LLM span carry prompt + completion past the budget.
     storage = RedisStorage("redis://unused", client=_FakeRedis())
-    big = {"results": [{"text": "x" * 1000}] * 100}
-    event = _event("vector search")
-    event["data"].update(output=big, rows=3, name="search")
+    event = _event("llm span")
+    event["data"].update(
+        messages=[{"role": "user", "content": "p" * 12_000}],
+        completion={"results": [{"text": "x" * 1000}] * 100},
+        rows=3,
+        name="search",
+    )
     storage.insert_many([event])
 
     data = search_logs(storage, LogFilter())[0]["data"]
-    assert isinstance(data["output"], str) and len(data["output"]) <= MAX_DATA_VALUE_CHARS
-    assert "characters truncated" in data["output"]
+    assert len(json.dumps(data)) <= MAX_EVENT_DATA_CHARS + 512
+    assert "characters truncated" in data["completion"]
     assert data["rows"] == 3 and data["name"] == "search" and data["source"] == "api"
+
+
+def test_redis_metrics_read_only_sources_that_hold_requests():
+    # The dashboard polls /metrics every 15 s per tab; scanning the worker's ring on each
+    # poll stacked into ~35 GB on one host (2026-11-20).
+    fake = _FakeRedis()
+    storage = RedisStorage("redis://unused", client=fake)
+    storage.insert_many([_event(f"worker-{i}", source="worker") for i in range(5)])
+    read: list[str] = []
+    lrange = fake.lrange
+    fake.lrange = lambda key, start, end: read.append(key) or lrange(key, start, end)  # type: ignore[method-assign]
+
+    assert storage.fetch_requests() == []
+    assert read == []  # lite mode: no request events, nothing scanned
+
+    request = _event("GET /x", source="api")
+    request.update(type="request")
+    request["data"].update(status=200, duration_ms=12.5)
+    storage.insert_many([request])
+    rows = storage.fetch_requests()
+    assert [(r["status"], r["duration_ms"]) for r in rows] == [(200, 12.5)]
+    assert set(read) == {"ox1log:src:api"}

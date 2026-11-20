@@ -307,6 +307,13 @@ class RedisStorage:
         after_id: int | None = None,
     ) -> int:
         levels = normalize_levels(level)
+        filters = (text, levels, event_type, trace_id, signature, since, until, after_id)
+        if all(f is None or f == "" for f in filters):
+            # The dashboard counts on every page load; LLEN avoids reading every event.
+            pipe = self._client.pipeline(transaction=False)
+            for src in [source] if source else self.sources():
+                pipe.llen(self._list_key(src))
+            return sum(int(n) for n in pipe.execute())
         candidates = self._read_events(source, after_id=after_id)
         return sum(
             1

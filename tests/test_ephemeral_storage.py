@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from ox1log.memory import MemoryStorage
+from ox1log.memory import MAX_DATA_VALUE_CHARS, MemoryStorage
 from ox1log.query import LogFilter, count_logs, get_event, list_sources, search_logs
 from ox1log.redis_storage import RedisStorage
 from ox1log.storage import SQLiteStorage
@@ -36,6 +36,10 @@ class _FakePipeline:
 
     def lrange(self, key: str, start: int, end: int) -> _FakePipeline:
         self._ops.append(("lrange", (key, start, end)))
+        return self
+
+    def llen(self, key: str) -> _FakePipeline:
+        self._ops.append(("llen", (key,)))
         return self
 
     def execute(self) -> list[Any]:
@@ -79,6 +83,9 @@ class _FakeRedis:
         if end < 0:
             end = len(lst) + end
         return list(lst[start : end + 1])
+
+    def llen(self, key: str) -> int:
+        return len(self.lists.get(key, []))
 
     def sadd(self, key: str, *values: str) -> int:
         s = self.sets.setdefault(key, set())
@@ -214,6 +221,10 @@ def test_redis_storage_ring_buffer_namespace_ttl_and_cursor():
     newer = search_logs(agents, LogFilter(source="worker", after_id=oldest_worker_id, limit=10))
     assert [r["message"] for r in newer] == ["agents-worker-3", "agents-worker-4"]
     assert count_logs(agents, LogFilter(source="worker", level="ERROR")) == 1
+    # Unfiltered counts come from LLEN, without reading events.
+    fake.lrange = None  # type: ignore[method-assign]
+    assert count_logs(agents, LogFilter()) == 4
+    assert count_logs(agents, LogFilter(source="worker")) == 3
 
 
 def test_sqlite_storage_supports_source_after_id_and_list_sources(tmp_path):
@@ -231,3 +242,17 @@ def test_sqlite_storage_supports_source_after_id_and_list_sources(tmp_path):
         assert [r["message"] for r in after] == ["w1", "a2"]
     finally:
         storage.close()
+
+
+def test_oversized_data_values_are_truncated_but_small_ones_kept():
+    # 1,090 spans holding whole vector-search bodies made one Redis list 581 MB (2026-11-20).
+    storage = RedisStorage("redis://unused", client=_FakeRedis())
+    big = {"results": [{"text": "x" * 1000}] * 100}
+    event = _event("vector search")
+    event["data"].update(output=big, rows=3, name="search")
+    storage.insert_many([event])
+
+    data = search_logs(storage, LogFilter())[0]["data"]
+    assert isinstance(data["output"], str) and len(data["output"]) <= MAX_DATA_VALUE_CHARS
+    assert "characters truncated" in data["output"]
+    assert data["rows"] == 3 and data["name"] == "search" and data["source"] == "api"

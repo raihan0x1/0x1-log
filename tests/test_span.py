@@ -55,6 +55,7 @@ def test_ai_span_attributes(tmp_path):
         assert data["system_prompt"] == "You are a math assistant."
         assert data["messages"] == [{"role": "user", "content": "What is 2+2?"}]
         assert data["completion"] == "2 + 2 = 4"
+        assert "output" not in data  # set_completion fills output too; stored once
         assert data["prompt_tokens"] == 15
         assert data["completion_tokens"] == 8
         assert data["total_tokens"] == 23

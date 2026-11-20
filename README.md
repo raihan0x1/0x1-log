@@ -27,11 +27,13 @@ Four steps. Nothing else is required for a FastAPI app.
 ### 1. Install
 
 ```bash
-uv add "0x1-log>=1.2" python-dotenv
-# or: pip install "0x1-log>=1.2" python-dotenv
+uv add "0x1-log>=1.3" python-dotenv
+# or: pip install "0x1-log>=1.3" python-dotenv
+# for multi-pod API + worker ephemeral logs in Redis:
+# pip install "0x1-log[redis]>=1.3"
 ```
 
-Python ≥ 3.10. For a new app, logs land in `.0x1log/0x1log.db`.
+Python ≥ 3.10. In default `mode="full"`, logs land in `.0x1log/0x1log.db`. In `mode="lite"`, logs stay in a bounded in-memory ring buffer (`memory://`) or Redis (`redis://...`) with zero database writes.
 
 ### 2. Put a token in `.env`
 
@@ -68,6 +70,26 @@ Open `http://127.0.0.1:8000/0x1log/` and type the token from `.env`.
 
 No token set? Collection still runs; the URL shows a setup page instead of data.
 
+### Lite mode (ephemeral logs, zero DB)
+
+Only want live API + worker logs without request-body middleware or Postgres/SQLite bloat? Pass `mode="lite"`:
+
+```python
+# Single-process zero-infra default (bounded memory:// ring buffer, 5000 events/source)
+observe(app, mode="lite", dashboard_token=os.environ.get("OX1LOG_TOKEN"))
+
+# Multi-pod API + worker merged in Redis (pip install "0x1-log[redis]>=1.3")
+observe(
+    app,
+    mode="lite",
+    db_path=os.environ.get("REDIS_URL", "memory://"),
+    key_prefix="ox1log:my-service",
+    dashboard_token=os.environ.get("OX1LOG_TOKEN"),
+)
+```
+
+In your worker process, call `attach(db_path=os.environ["REDIS_URL"], source="worker", key_prefix="ox1log:my-service")`. Filter by source or tail incrementally via `GET /0x1log/api/logs?source=worker&after_id=42` and inspect active sources via `GET /0x1log/api/health`.
+
 ### Optional: a worker, cron job, or script
 
 A second process has no FastAPI app, so `observe()` does not apply. In **that** process, point at the same database:
@@ -89,9 +111,7 @@ logger.add(LogHandler(collector), format="{message}")
 
 ### Upgrade an existing app
 
-Replace the `nahiarhdlog` dependency with `0x1-log>=1.2` and update imports from `nahiarhdLOG` to `ox1log`, including submodules. The standalone release includes the implementation and its `otel` and `postgres` extras. In an existing environment, remove the old distribution after updating your dependencies and imports.
-
-If you keep your existing working directory, the default storage picks up `.nahiarhdlog/nahiarhdlog.db` when that file exists. Keep passing any explicit SQLite path or Postgres URL you already use. When the dashboard uses its defaults, old bookmarks under `/nahiarhdlog/` still work. Applications that pass their own `dashboard_prefix` keep that route.
+Replace the old `nahiarhdlog` dependency with `0x1-log>=1.3` and update imports from `nahiarhdLOG` to `ox1log`, including submodules. Legacy `/nahiarhdlog` and `.nahiarhdlog/` fallbacks were removed in `1.3.0`; new cookies use `ox1log_token` and Postgres tables use `ox1log_events`.
 
 ## Features
 
@@ -111,7 +131,10 @@ If you keep your existing working directory, the default storage picks up `.nahi
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `db_path` | `".0x1log/0x1log.db"` | SQLite file for events. An existing legacy default file takes precedence when the argument is omitted. |
+| `mode` | `"full"` | `"full"` enables request middleware + persistent storage; `"lite"` skips request middleware and defaults to bounded `memory://` |
+| `db_path` | `".0x1log/0x1log.db"` (`"memory://"` in `lite`) | `"memory://"`, `"redis://..."` (`0x1-log[redis]`), SQLite path, or `"postgresql://..."` (`0x1-log[postgres]`) |
+| `key_prefix` | `"ox1log"` | Redis key prefix (isolates services sharing one Redis instance) |
+| `max_events` | `5000` | Ring-buffer cap per source for `memory://` and `redis://` |
 | `dashboard_token` | `None` (setup page) | Token for the dashboard; unset = setup page, data stays off |
 | `dashboard_prefix` | `"/0x1log"` | Where the dashboard lives |
 | `retention_days` | `7` | How long events are kept |

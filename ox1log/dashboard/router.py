@@ -24,6 +24,7 @@ from ..query import (
     count_logs,
     get_event,
     get_trace,
+    list_sources,
     log_histogram,
     search_logs,
     summarize_trace,
@@ -41,7 +42,7 @@ _MEDIA = {
 # Fonts never change within a release and are 60 KB; everything else stays
 # uncached (see _NO_STORE).
 _CACHEABLE = {".woff2": {"Cache-Control": "public, max-age=604800"}}
-_COOKIE_NAME = "nahiarhdlog_token"
+_COOKIE_NAME = "ox1log_token"
 # Auth-dependent pages must never be cached: a cached index served after
 # logout reboots the app, its API calls 401, the 401 handler navigates,
 # the navigation hits the cache again — an infinite reload loop.
@@ -195,6 +196,13 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
         # instance id must identify whichever backend served this call.
         return {
             "version": __version__,
+            "mode": getattr(collector, "mode", "full"),
+            "storage": getattr(
+                collector.storage,
+                "storage_kind",
+                type(collector.storage).__name__.lower(),
+            ),
+            "sources": list_sources(collector.storage),
             "queued": collector.queued,
             "dropped": collector.dropped,
             "fts_available": collector.storage.fts_available,
@@ -212,6 +220,8 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
         event_type: str | None = Query(default=None, alias="type"),
         trace_id: str | None = None,
         signature: str | None = None,
+        source: str | None = None,
+        after_id: int | None = None,
         since: float | None = None,
         until: float | None = None,
         limit: int = 100,
@@ -226,6 +236,8 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
             event_type=event_type,
             trace_id=trace_id,
             signature=signature,
+            source=source,
+            after_id=after_id,
             since=since,
             until=until,
             limit=limit,
@@ -324,7 +336,7 @@ _SETUP_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>0x1LOG — setup required</title>
+<title>0x1log — setup required</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -357,7 +369,7 @@ _SETUP_PAGE = """<!DOCTYPE html>
 <body>
   <div class="card">
     <h1>Dashboard is disabled</h1>
-    <p>0x1LOG is collecting logs, but no <code>dashboard_token</code> was set, so the dashboard stays off.</p>
+    <p>0x1log is collecting logs, but no <code>dashboard_token</code> was set, so the dashboard stays off.</p>
     <pre>observe(
     app,
     dashboard_token="long-random-secret",

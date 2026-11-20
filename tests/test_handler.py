@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from ox1log.collector import Collector
-from ox1log.handler import LogHandler, install_excepthook
+from ox1log.handler import Ox1logHandler, install_excepthook
 from ox1log.middleware import current_trace_id
 
 
@@ -15,8 +15,8 @@ def collector(tmp_path):
 
 
 def test_handler_forwards_record(collector):
-    handler = LogHandler(collector, level=logging.INFO)
-    log = logging.getLogger("nahiarhdlog.test.forward")
+    handler = Ox1logHandler(collector, level=logging.INFO)
+    log = logging.getLogger("app.test.forward")
     log.addHandler(handler)
     log.setLevel(logging.INFO)
     try:
@@ -28,12 +28,12 @@ def test_handler_forwards_record(collector):
     assert len(rows) == 1
     assert rows[0]["level"] == "INFO"
     assert rows[0]["type"] == "log"
-    assert rows[0]["data"]["logger"] == "nahiarhdlog.test.forward"
+    assert rows[0]["data"]["logger"] == "app.test.forward"
 
 
 def test_handler_respects_level(collector):
-    handler = LogHandler(collector, level=logging.WARNING)
-    log = logging.getLogger("nahiarhdlog.test.level")
+    handler = Ox1logHandler(collector, level=logging.WARNING)
+    log = logging.getLogger("app.test.level")
     log.addHandler(handler)
     log.setLevel(logging.DEBUG)
     try:
@@ -47,8 +47,8 @@ def test_handler_respects_level(collector):
 
 
 def test_handler_marks_exception_as_error(collector):
-    handler = LogHandler(collector)
-    log = logging.getLogger("nahiarhdlog.test.exc")
+    handler = Ox1logHandler(collector)
+    log = logging.getLogger("app.test.exc")
     log.addHandler(handler)
     try:
         try:
@@ -68,8 +68,8 @@ def test_handler_marks_exception_as_error(collector):
 
 def test_handler_skips_second_traceback_when_preformatted(collector):
     # Loguru-style: exc_info set AND message already carries a traceback.
-    handler = LogHandler(collector)
-    log = logging.getLogger("nahiarhdlog.test.pretb")
+    handler = Ox1logHandler(collector)
+    log = logging.getLogger("app.test.pretb")
     log.addHandler(handler)
     log.setLevel(logging.DEBUG)
     try:
@@ -92,8 +92,8 @@ def test_handler_skips_second_traceback_when_preformatted(collector):
 
 
 def test_handler_keeps_stdlib_extra(collector):
-    handler = LogHandler(collector)
-    log = logging.getLogger("nahiarhdlog.test.extra")
+    handler = Ox1logHandler(collector)
+    log = logging.getLogger("app.test.extra")
     log.addHandler(handler)
     log.setLevel(logging.INFO)
     try:
@@ -104,12 +104,12 @@ def test_handler_keeps_stdlib_extra(collector):
     rows = collector.storage.search(text="with-extra")
     assert rows[0]["data"]["user_id"] == "u-9"
     assert rows[0]["data"]["task_id"] == 12
-    assert rows[0]["data"]["logger"] == "nahiarhdlog.test.extra"
+    assert rows[0]["data"]["logger"] == "app.test.extra"
 
 
 def test_handler_attaches_trace_id(collector):
-    handler = LogHandler(collector)
-    log = logging.getLogger("nahiarhdlog.test.trace")
+    handler = Ox1logHandler(collector)
+    log = logging.getLogger("app.test.trace")
     log.addHandler(handler)
     log.setLevel(logging.INFO)
     token = current_trace_id.set("trace-abc")

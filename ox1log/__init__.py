@@ -6,15 +6,19 @@ from typing import Any
 
 from .attach import attach
 from .collector import Collector
+from .memory import MemoryStorage
 from .postgres import PostgresStorage
+from .redis_storage import RedisStorage
 from .span import AISpan, Span, ai_span, span
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __all__ = [
     "__version__",
     "AISpan",
     "Collector",
+    "MemoryStorage",
     "PostgresStorage",
+    "RedisStorage",
     "Span",
     "ai_span",
     "attach",

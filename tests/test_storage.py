@@ -1,9 +1,11 @@
+import inspect
 import sqlite3
 import threading
 import time
 
 import pytest
 
+from ox1log.adapters.fastapi import observe
 from ox1log.collector import DEFAULT_DB_PATH, Collector
 from ox1log.query import LogFilter, count_logs, get_event, search_logs
 from ox1log.storage import SQLiteStorage
@@ -221,28 +223,12 @@ def test_storage_creates_missing_parent_dirs(tmp_path):
     assert nested.exists()
 
 
-def test_default_db_path_reuses_existing_legacy_history(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    with_new_path = Collector()
-    try:
-        assert with_new_path.storage.path == DEFAULT_DB_PATH == ".0x1log/0x1log.db"
-    finally:
-        with_new_path.storage.close()
-
-    legacy_path = ".nahiarhdlog/nahiarhdlog.db"
-    legacy = SQLiteStorage(legacy_path)
-    legacy.insert_many([_event("legacy history")])
-    legacy.close()
-
-    upgraded = Collector()
-    explicit = Collector(db_path=DEFAULT_DB_PATH)
-    try:
-        assert upgraded.storage.path == legacy_path
-        assert upgraded.storage.count(text="legacy history") == 1
-        assert explicit.storage.path == DEFAULT_DB_PATH
-    finally:
-        upgraded.storage.close()
-        explicit.storage.close()
+def test_default_db_path_is_dot_directory():
+    assert DEFAULT_DB_PATH == ".0x1log/0x1log.db"
+    params = inspect.signature(Collector.__init__).parameters
+    assert params["db_path"].default is DEFAULT_DB_PATH
+    params = inspect.signature(observe).parameters
+    assert params["db_path"].default is DEFAULT_DB_PATH
 
 
 class _FakeStorage:
@@ -396,13 +382,13 @@ def test_collector_resilient_to_storage_crash():
         c.stop()
 
 
-def test_handler_ignores_internal_nahiarhdlog_logs():
+def test_handler_ignores_internal_0x1log_logs():
     import logging
-    from ox1log.handler import LogHandler
+    from ox1log.handler import Ox1logHandler
 
     fake = _FakeStorage()
     c = Collector(storage=fake)
-    handler = LogHandler(c)
+    handler = Ox1logHandler(c)
     record = logging.LogRecord(
         name="ox1log.collector",
         level=logging.WARNING,

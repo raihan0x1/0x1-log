@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 
 from ox1log import attach
-from ox1log.handler import NahiarhdHandler
+from ox1log.handler import Ox1logHandler
 
 
 def _detach(collector) -> None:
     root = logging.getLogger()
     for handler in list(root.handlers):
-        if isinstance(handler, NahiarhdHandler) and handler.collector is collector:
+        if isinstance(handler, Ox1logHandler) and handler.collector is collector:
             root.removeHandler(handler)
             handler.close()
     collector.stop()
@@ -32,7 +32,7 @@ def attached(tmp_path):
 
 
 def test_attach_captures_stdlib_log(attached):
-    logging.getLogger("nahiarhdlog.test.attach.basic").info("from-worker")
+    logging.getLogger("app.test.attach.basic").info("from-worker")
     assert attached.flush()
     rows = attached.storage.search(text="from-worker")
     assert len(rows) == 1
@@ -44,7 +44,7 @@ def test_attach_captures_stdlib_log(attached):
 def test_attach_optional_source(tmp_path):
     collector = attach(str(tmp_path / "t.db"), source="embeddings")
     try:
-        logging.getLogger("nahiarhdlog.test.attach.source").warning("tagged")
+        logging.getLogger("app.test.attach.source").warning("tagged")
         assert collector.flush()
         rows = collector.storage.search(text="tagged")
         assert len(rows) == 1

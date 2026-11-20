@@ -9,10 +9,11 @@ import logging
 import queue
 import threading
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .memory import DEFAULT_MAX_EVENTS, DEFAULT_MAX_MESSAGE_CHARS, MemoryStorage
 from .postgres import PostgresStorage
+from .redis_storage import DEFAULT_KEY_PREFIX, DEFAULT_TTL_SECONDS, RedisStorage
 from .storage import SQLiteStorage
 
 if TYPE_CHECKING:
@@ -21,12 +22,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _FLUSH_INTERVAL = 0.2  # seconds
+_IDLE_POLL = 0.05  # seconds: lets flush_pending wake promptly without busy-spinning
 _BATCH_SIZE = 500
 _PURGE_INTERVAL = 3600.0  # seconds
 
 # Default on-disk location: a dot-directory keeps project roots clean.
 DEFAULT_DB_PATH = ".0x1log/0x1log.db"
-_LEGACY_DB_PATH = ".nahiarhdlog/nahiarhdlog.db"
+MEMORY_URI = "memory://"
 
 _ERROR_ONLY = frozenset({"error"})
 
@@ -38,42 +40,94 @@ def get_active_collector() -> Collector | None:
     return _active_collector
 
 
+def _build_storage(
+    db_path: str,
+    *,
+    retention_days: int,
+    max_events: int,
+    ttl_seconds: int,
+    key_prefix: str,
+    max_message_chars: int,
+) -> SQLiteStorage | PostgresStorage | MemoryStorage | RedisStorage:
+    if db_path == MEMORY_URI:
+        return MemoryStorage(
+            max_events=max_events,
+            max_message_chars=max_message_chars,
+        )
+    if db_path.startswith(("redis://", "rediss://", "unix://")):
+        return RedisStorage(
+            db_path,
+            key_prefix=key_prefix,
+            max_events=max_events,
+            ttl_seconds=ttl_seconds,
+            max_message_chars=max_message_chars,
+        )
+    if db_path.startswith(("postgresql://", "postgres://")):
+        return PostgresStorage(db_path, retention_days=retention_days)
+    return SQLiteStorage(db_path, retention_days=retention_days)
+
+
 class Collector:
     """Receives events without blocking callers and persists them in batches."""
 
     def __init__(
         self,
-        db_path: str | None = None,
+        db_path: str = DEFAULT_DB_PATH,
         retention_days: int = 7,
         queue_size: int = 10_000,
         alerter: Alerter | None = None,
-        storage: SQLiteStorage | PostgresStorage | None = None,
+        storage: Any | None = None,
         default_data: dict[str, Any] | None = None,
+        *,
+        mode: str = "full",
+        max_events: int = DEFAULT_MAX_EVENTS,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        key_prefix: str = DEFAULT_KEY_PREFIX,
+        max_message_chars: int = DEFAULT_MAX_MESSAGE_CHARS,
     ) -> None:
         # Custom backends plug in via `storage`; anything duck-typed like
-        # SQLiteStorage works. Otherwise a postgres URL selects shared
-        # Postgres history, and anything else stays zero-infrastructure.
+        # SQLiteStorage works. Otherwise URI scheme selects memory, redis,
+        # postgres, or local SQLite.
         if storage is not None:
             self.storage = storage
         else:
-            if db_path is None:
-                db_path = (
-                    _LEGACY_DB_PATH if Path(_LEGACY_DB_PATH).is_file() else DEFAULT_DB_PATH
-                )
-            if db_path.startswith(("postgresql://", "postgres://")):
-                self.storage = PostgresStorage(db_path, retention_days=retention_days)
-            else:
-                self.storage = SQLiteStorage(db_path, retention_days=retention_days)
+            self.storage = _build_storage(
+                db_path,
+                retention_days=retention_days,
+                max_events=max_events,
+                ttl_seconds=ttl_seconds,
+                key_prefix=key_prefix,
+                max_message_chars=max_message_chars,
+            )
+        self.mode = mode
         self.alerter = alerter
         self._default_data = dict(default_data) if default_data else {}
+        self._bound_handlers: list[logging.Handler] = []
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=queue_size)
         self._dropped = 0
         self._completed = 0
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._flush_now = threading.Event()
         self._started = False
         self._last_purge = time.monotonic()
         self._thread = self._new_thread()
+
+    @property
+    def bound_handlers(self) -> tuple[logging.Handler, ...]:
+        with self._lock:
+            return tuple(self._bound_handlers)
+
+    def bind_handler(self, handler: logging.Handler) -> logging.Handler:
+        with self._lock:
+            if handler not in self._bound_handlers:
+                self._bound_handlers.append(handler)
+        return handler
+
+    def set_level(self, level: int | str) -> int:
+        from .handler import set_handler_level
+
+        return set_handler_level(self, level)
 
     def _new_thread(self) -> threading.Thread:
         # Each writer owns its stop event: a writer that outlived stop()'s
@@ -147,11 +201,12 @@ class Collector:
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Block until queued events are persisted. Returns False on timeout."""
+        self._flush_now.set()
         deadline = time.monotonic() + timeout
         while self._queue.unfinished_tasks:
             if time.monotonic() > deadline:
                 return False
-            time.sleep(0.01)
+            time.sleep(0.005)
         return True
 
     def flush_pending(self, timeout: float = 2.0) -> bool:
@@ -169,6 +224,7 @@ class Collector:
             done_at_entry = self._completed
         if owed <= 0:
             return True
+        self._flush_now.set()
         deadline = time.monotonic() + timeout
         while True:
             with self._lock:
@@ -177,7 +233,7 @@ class Collector:
                 return True
             if time.monotonic() > deadline:
                 return False
-            time.sleep(0.01)
+            time.sleep(0.005)
 
     def stop(self, timeout: float = 10.0) -> None:
         if not self._started:
@@ -204,25 +260,32 @@ class Collector:
         last_flush = time.monotonic()
         while not stop.is_set():
             try:
-                batch.append(self._queue.get(timeout=_FLUSH_INTERVAL))
+                batch.append(self._queue.get(timeout=_IDLE_POLL))
             except queue.Empty:
                 pass
             now = time.monotonic()
+            flush_requested = self._flush_now.is_set()
             if batch and (
-                len(batch) >= _BATCH_SIZE or now - last_flush >= _FLUSH_INTERVAL
+                flush_requested
+                or len(batch) >= _BATCH_SIZE
+                or now - last_flush >= _FLUSH_INTERVAL
             ):
+                if flush_requested:
+                    self._flush_now.clear()
                 try:
                     self._insert(batch)
                 except Exception as exc:
                     with self._lock:
                         self._dropped += len(batch)
                     logger.warning(
-                        "0x1LOG: failed to persist batch of %d events: %s",
+                        "0x1log: failed to persist batch of %d events: %s",
                         len(batch),
                         exc,
                     )
                 batch = []
                 last_flush = now
+            elif flush_requested:
+                self._flush_now.clear()
             if now - self._last_purge >= _PURGE_INTERVAL:
                 self._last_purge = now
                 try:
@@ -241,7 +304,7 @@ class Collector:
                 with self._lock:
                     self._dropped += len(batch)
                 logger.warning(
-                    "0x1LOG: failed to persist shutdown batch of %d events: %s",
+                    "0x1log: failed to persist shutdown batch of %d events: %s",
                     len(batch),
                     exc,
                 )

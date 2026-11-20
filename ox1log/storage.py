@@ -101,6 +101,7 @@ class SQLiteStorage:
 
     # One file per process: replicas each see only their own events.
     shared = False
+    storage_kind = "sqlite"
 
     def __init__(
         self, path: str, retention_days: int = 7, timeout: float = 15.0
@@ -132,6 +133,7 @@ class SQLiteStorage:
         self._conn = conn
         try:
             self._enable_wal()
+            conn.execute("PRAGMA synchronous=NORMAL;")
             conn.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)};")
             conn.executescript(_SCHEMA)
             self._fts = self._try_enable_fts()
@@ -242,6 +244,8 @@ class SQLiteStorage:
         since: float | None,
         until: float | None,
         use_fts: bool = True,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> tuple[str, list[Any], str | None]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -266,6 +270,12 @@ class SQLiteStorage:
         if signature:
             clauses.append("json_extract(e.data, '$.signature') = ?")
             params.append(signature)
+        if source:
+            clauses.append("json_extract(e.data, '$.source') = ?")
+            params.append(source)
+        if after_id is not None:
+            clauses.append("e.id > ?")
+            params.append(int(after_id))
         if since is not None:
             clauses.append("e.ts >= ?")
             params.append(since)
@@ -274,6 +284,17 @@ class SQLiteStorage:
             params.append(until)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         return join, params, where
+
+    def sources(self) -> list[str]:
+        sql = (
+            "SELECT DISTINCT json_extract(data, '$.source') AS src"
+            " FROM events"
+            " WHERE json_extract(data, '$.source') IS NOT NULL"
+            " ORDER BY src"
+        )
+        with self._lock:
+            rows = self._conn.execute(sql).fetchall()
+        return [str(r["src"]) for r in rows if r["src"]]
 
     def search(
         self,
@@ -286,16 +307,18 @@ class SQLiteStorage:
         until: float | None = None,
         limit: int = 100,
         offset: int = 0,
+        *,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), _MAX_LIMIT))
         offset = max(0, int(offset))
+        order = "ORDER BY e.id ASC" if after_id is not None else "ORDER BY e.ts DESC, e.id DESC"
         join, params, where = self._filters(
-            text, level, event_type, trace_id, signature, since, until
+            text, level, event_type, trace_id, signature, since, until,
+            source=source, after_id=after_id,
         )
-        sql = (
-            f"SELECT e.* FROM events e {join} {where}"
-            " ORDER BY e.ts DESC, e.id DESC LIMIT ? OFFSET ?"
-        )
+        sql = f"SELECT e.* FROM events e {join} {where} {order} LIMIT ? OFFSET ?"
         try:
             with self._lock:
                 rows = self._conn.execute(sql, (*params, limit, offset)).fetchall()
@@ -308,12 +331,9 @@ class SQLiteStorage:
             # them and returning a wrong superset.
             join, params, where = self._filters(
                 text, level, event_type, trace_id, signature, since, until,
-                use_fts=False,
+                use_fts=False, source=source, after_id=after_id,
             )
-            sql = (
-                f"SELECT e.* FROM events e {join} {where}"
-                " ORDER BY e.ts DESC, e.id DESC LIMIT ? OFFSET ?"
-            )
+            sql = f"SELECT e.* FROM events e {join} {where} {order} LIMIT ? OFFSET ?"
             with self._lock:
                 rows = self._conn.execute(sql, (*params, limit, offset)).fetchall()
         return [_row_to_event(r) for r in rows]
@@ -327,9 +347,13 @@ class SQLiteStorage:
         signature: str | None = None,
         since: float | None = None,
         until: float | None = None,
+        *,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> int:
         join, params, where = self._filters(
-            text, level, event_type, trace_id, signature, since, until
+            text, level, event_type, trace_id, signature, since, until,
+            source=source, after_id=after_id,
         )
         sql = f"SELECT COUNT(*) AS n FROM events e {join} {where}"
         try:
@@ -341,7 +365,7 @@ class SQLiteStorage:
                 raise
             join, params, where = self._filters(
                 text, level, event_type, trace_id, signature, since, until,
-                use_fts=False,
+                use_fts=False, source=source, after_id=after_id,
             )
             sql = f"SELECT COUNT(*) AS n FROM events e {join} {where}"
             with self._lock:

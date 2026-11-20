@@ -50,7 +50,7 @@ _RECORD_BUILTIN = frozenset(
 )
 
 
-class LogHandler(logging.Handler):
+class Ox1logHandler(logging.Handler):
     """A `logging.Handler` that forwards records to the collector."""
 
     def __init__(self, collector: Collector, level: int = logging.NOTSET) -> None:
@@ -59,7 +59,11 @@ class LogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            if record.name.startswith("ox1log"):
+            # Callers like Loguru invoke emit() directly without Handler.handle(),
+            # so enforce self.level here too for dynamic set_level() updates.
+            if self.level and record.levelno < self.level:
+                return
+            if record.name == "ox1log" or record.name.startswith("ox1log."):
                 return
             message = record.getMessage()
             has_exc = bool(record.exc_info and record.exc_info[0] is not None)
@@ -114,17 +118,43 @@ class LogHandler(logging.Handler):
             self.handleError(record)
 
 
-NahiarhdHandler = LogHandler
+# Backwards-compatible alias kept from 0x1-log 1.2.0.
+LogHandler = Ox1logHandler
 
 
-def ensure_handler(collector: Collector, level: int = logging.NOTSET) -> None:
-    """Attach a `LogHandler` to the root logger if this collector lacks one."""
+def resolve_level(level: int | str) -> int:
+    if isinstance(level, int):
+        return level
+    name = str(level).strip().upper()
+    resolved = logging.getLevelName(name)
+    return resolved if isinstance(resolved, int) else logging.INFO
+
+
+def ensure_handler(collector: Collector, level: int | str = logging.NOTSET) -> Ox1logHandler:
+    """Attach an `Ox1logHandler` to the root logger if this collector lacks one."""
+    lvl = resolve_level(level)
     root = logging.getLogger()
     for handler in root.handlers:
-        if isinstance(handler, LogHandler) and handler.collector is collector:
-            handler.setLevel(level)
-            return
-    root.addHandler(LogHandler(collector, level=level))
+        if isinstance(handler, Ox1logHandler) and handler.collector is collector:
+            handler.setLevel(lvl)
+            collector.bind_handler(handler)
+            return handler
+    handler = Ox1logHandler(collector, level=lvl)
+    root.addHandler(handler)
+    collector.bind_handler(handler)
+    return handler
+
+
+def set_handler_level(collector: Collector, level: int | str) -> int:
+    """Update the threshold of every handler bound to `collector`."""
+    lvl = resolve_level(level)
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if isinstance(handler, Ox1logHandler) and handler.collector is collector:
+            handler.setLevel(lvl)
+    for handler in collector.bound_handlers:
+        handler.setLevel(lvl)
+    return lvl
 
 
 Excepthook = Callable[

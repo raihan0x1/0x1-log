@@ -74,6 +74,6 @@ def test_span_events_export_with_name_and_duration():
     (exported,) = exporter.get_finished_spans()
     assert exported.name == "generate"
     assert round((exported.end_time - exported.start_time) / 1e6) == 40
-    assert exported.attributes["nahiarhdlog.span_type"] == "llm"
-    assert exported.attributes["nahiarhdlog.total_tokens"] == 12
+    assert exported.attributes["ox1log.span_type"] == "llm"
+    assert exported.attributes["ox1log.total_tokens"] == 12
     assert exported.status.status_code == StatusCode.ERROR

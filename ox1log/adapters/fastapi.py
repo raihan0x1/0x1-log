@@ -9,80 +9,113 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from ..alerter import Alerter, AlertSink, Rule
-from ..collector import Collector
-from ..handler import ensure_handler, install_excepthook
+from ..collector import DEFAULT_DB_PATH, MEMORY_URI, Collector
+from ..handler import ensure_handler, install_excepthook, resolve_level
+from ..memory import DEFAULT_MAX_EVENTS, DEFAULT_MAX_MESSAGE_CHARS
 from ..middleware import LoggingMiddleware
+from ..redis_storage import DEFAULT_KEY_PREFIX, DEFAULT_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_DASHBOARD_PREFIX = "/0x1log"
-_LEGACY_DASHBOARD_PREFIX = "/nahiarhdlog"
 
 
 def observe(
     app: Any,
-    db_path: str | None = None,
+    db_path: str = DEFAULT_DB_PATH,
     retention_days: int = 7,
     sample_rate: float = 1.0,
-    level: int = logging.INFO,
+    level: int | str = logging.INFO,
     rules: list[Rule] | None = None,
     sinks: list[AlertSink] | None = None,
-    dashboard_prefix: str | None = None,
+    dashboard_prefix: str = "/0x1log",
     dashboard_token: str | None = None,
     skip_paths: list[str] | None = None,
-    capture_body: bool = True,
+    capture_body: bool | None = None,
     max_body_size: int = 65536,
+    *,
+    mode: str = "full",
+    storage: Any | None = None,
+    max_events: int = DEFAULT_MAX_EVENTS,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    key_prefix: str = DEFAULT_KEY_PREFIX,
+    max_message_chars: int = DEFAULT_MAX_MESSAGE_CHARS,
+    source: str | None = None,
+    capture_requests: bool | None = None,
 ) -> Collector:
-    """Attach 0x1LOG to a FastAPI app. Returns the collector.
+    """Attach 0x1log to a FastAPI app. Returns the collector.
 
-    The dashboard data is served only when `dashboard_token` is set: it
-    must never be reachable without a key. Without a token the prefix
-    serves a setup page telling the user how to enable the dashboard.
-    The dashboard zone's own traffic is never logged, so live tail
-    can't flood itself.
+    `mode="lite"` is zero-overhead ephemeral logging: defaults to `memory://`
+    (zero disk, zero DB), skips request/body middleware, and tags logs with
+    `source="api"`. Pass `db_path="redis://..."` (`pip install '0x1-log[redis]'`)
+    to merge API and worker pods in a bounded Redis ring buffer.
+
+    `mode="full"` keeps persistent SQLite/Postgres history, request middleware,
+    traces, and metrics.
     """
+    if mode not in ("lite", "full"):
+        raise ValueError(f"mode must be 'lite' or 'full', got {mode!r}")
+
+    is_lite = mode == "lite"
+    resolved_path = MEMORY_URI if (is_lite and db_path == DEFAULT_DB_PATH) else db_path
+    resolved_capture_requests = (not is_lite) if capture_requests is None else capture_requests
+    resolved_capture_body = (not is_lite) if capture_body is None else capture_body
+    resolved_source = ("api" if is_lite else None) if source is None else source
+
     alerter = None
     if rules and sinks:
         alerter = Alerter(rules, sinks).start()
     elif rules or sinks:
         logger.warning(
-            "0x1LOG alerting is disabled: pass both rules= and sinks= "
+            "0x1log alerting is disabled: pass both rules= and sinks= "
             "to observe() (got %s).",
             "rules only" if rules else "sinks only",
         )
     collector = Collector(
-        db_path, retention_days=retention_days, alerter=alerter
+        resolved_path,
+        retention_days=retention_days,
+        alerter=alerter,
+        storage=storage,
+        default_data={"source": resolved_source} if resolved_source else None,
+        mode=mode,
+        max_events=max_events,
+        ttl_seconds=ttl_seconds,
+        key_prefix=key_prefix,
+        max_message_chars=max_message_chars,
     ).start()
-    custom_prefix = (dashboard_prefix or "").rstrip("/")
-    prefix = custom_prefix or DEFAULT_DASHBOARD_PREFIX
-    prefixes = (prefix,) if custom_prefix else (prefix, _LEGACY_DASHBOARD_PREFIX)
-    skips = tuple(dict.fromkeys([*(skip_paths or ()), *prefixes]))
-    app.add_middleware(
-        LoggingMiddleware,
-        collector=collector,
-        sample_rate=sample_rate,
-        skip_prefixes=skips,
-        capture_body=capture_body,
-        max_body_size=max_body_size,
-    )
+    prefix = (dashboard_prefix or "/0x1log").rstrip("/") or "/0x1log"
+    if resolved_capture_requests:
+        skips = list(skip_paths or [])
+        if prefix not in skips:
+            skips.append(prefix)
+        app.add_middleware(
+            LoggingMiddleware,
+            collector=collector,
+            sample_rate=sample_rate,
+            skip_prefixes=tuple(skips),
+            capture_body=resolved_capture_body,
+            max_body_size=max_body_size,
+        )
+    if is_lite:
+        lvl = resolve_level(level)
+        root = logging.getLogger()
+        if root.level == logging.NOTSET or root.level > lvl:
+            root.setLevel(lvl)
     ensure_handler(collector, level)
     install_excepthook(collector)
     if dashboard_token:
         from ..dashboard.router import create_dashboard_router
 
-        router = create_dashboard_router(collector, dashboard_token)
-        for mount in prefixes:
-            app.include_router(router, prefix=mount, include_in_schema=mount == prefix)
+        app.include_router(
+            create_dashboard_router(collector, dashboard_token), prefix=prefix
+        )
     else:
         from ..dashboard.router import create_setup_router
 
         logger.warning(
-            "0x1LOG dashboard is disabled: dashboard_token is not set. "
+            "0x1log dashboard is disabled: dashboard_token is not set. "
             'Pass dashboard_token="..." to observe() to enable it at %s/.',
             prefix,
         )
-        for mount in prefixes:
-            app.include_router(create_setup_router(mount), prefix=mount)
+        app.include_router(create_setup_router(prefix), prefix=prefix)
 
     def _startup() -> None:
         # No-op on the first run (observe() already started both). A later
@@ -126,7 +159,7 @@ def _chain_lifespan(
         return
 
     @asynccontextmanager
-    async def _log_lifespan(inner_app: Any):
+    async def _ox1log_lifespan(inner_app: Any):
         startup()
         try:
             async with prev(inner_app) as state:
@@ -134,4 +167,4 @@ def _chain_lifespan(
         finally:
             shutdown()
 
-    router.lifespan_context = _log_lifespan
+    router.lifespan_context = _ox1log_lifespan

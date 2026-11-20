@@ -9,28 +9,31 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from ..alerter import Alerter, AlertSink, Rule
-from ..collector import DEFAULT_DB_PATH, Collector
+from ..collector import Collector
 from ..handler import ensure_handler, install_excepthook
 from ..middleware import LoggingMiddleware
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_DASHBOARD_PREFIX = "/0x1log"
+_LEGACY_DASHBOARD_PREFIX = "/nahiarhdlog"
+
 
 def observe(
     app: Any,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
     retention_days: int = 7,
     sample_rate: float = 1.0,
     level: int = logging.INFO,
     rules: list[Rule] | None = None,
     sinks: list[AlertSink] | None = None,
-    dashboard_prefix: str = "/nahiarhdlog",
+    dashboard_prefix: str | None = None,
     dashboard_token: str | None = None,
     skip_paths: list[str] | None = None,
     capture_body: bool = True,
     max_body_size: int = 65536,
 ) -> Collector:
-    """Attach nahiarhdlog to a FastAPI app. Returns the collector.
+    """Attach 0x1LOG to a FastAPI app. Returns the collector.
 
     The dashboard data is served only when `dashboard_token` is set: it
     must never be reachable without a key. Without a token the prefix
@@ -43,22 +46,22 @@ def observe(
         alerter = Alerter(rules, sinks).start()
     elif rules or sinks:
         logger.warning(
-            "nahiarhdlog alerting is disabled: pass both rules= and sinks= "
+            "0x1LOG alerting is disabled: pass both rules= and sinks= "
             "to observe() (got %s).",
             "rules only" if rules else "sinks only",
         )
     collector = Collector(
         db_path, retention_days=retention_days, alerter=alerter
     ).start()
-    prefix = (dashboard_prefix or "/nahiarhdlog").rstrip("/") or "/nahiarhdlog"
-    skips = list(skip_paths or [])
-    if prefix not in skips:
-        skips.append(prefix)
+    custom_prefix = (dashboard_prefix or "").rstrip("/")
+    prefix = custom_prefix or DEFAULT_DASHBOARD_PREFIX
+    prefixes = (prefix,) if custom_prefix else (prefix, _LEGACY_DASHBOARD_PREFIX)
+    skips = tuple(dict.fromkeys([*(skip_paths or ()), *prefixes]))
     app.add_middleware(
         LoggingMiddleware,
         collector=collector,
         sample_rate=sample_rate,
-        skip_prefixes=tuple(skips),
+        skip_prefixes=skips,
         capture_body=capture_body,
         max_body_size=max_body_size,
     )
@@ -67,18 +70,19 @@ def observe(
     if dashboard_token:
         from ..dashboard.router import create_dashboard_router
 
-        app.include_router(
-            create_dashboard_router(collector, dashboard_token), prefix=prefix
-        )
+        router = create_dashboard_router(collector, dashboard_token)
+        for mount in prefixes:
+            app.include_router(router, prefix=mount, include_in_schema=mount == prefix)
     else:
         from ..dashboard.router import create_setup_router
 
         logger.warning(
-            "nahiarhdlog dashboard is disabled: dashboard_token is not set. "
+            "0x1LOG dashboard is disabled: dashboard_token is not set. "
             'Pass dashboard_token="..." to observe() to enable it at %s/.',
             prefix,
         )
-        app.include_router(create_setup_router(prefix), prefix=prefix)
+        for mount in prefixes:
+            app.include_router(create_setup_router(mount), prefix=mount)
 
     def _startup() -> None:
         # No-op on the first run (observe() already started both). A later
@@ -122,7 +126,7 @@ def _chain_lifespan(
         return
 
     @asynccontextmanager
-    async def _nahiarhdlog_lifespan(inner_app: Any):
+    async def _log_lifespan(inner_app: Any):
         startup()
         try:
             async with prev(inner_app) as state:
@@ -130,4 +134,4 @@ def _chain_lifespan(
         finally:
             shutdown()
 
-    router.lifespan_context = _nahiarhdlog_lifespan
+    router.lifespan_context = _log_lifespan

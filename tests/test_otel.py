@@ -11,7 +11,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E4
 )
 from opentelemetry.trace import StatusCode  # noqa: E402
 
-from nahiarhdLOG.otel import export_trace  # noqa: E402
+from ox1log.otel import export_trace  # noqa: E402
 
 
 def test_export_trace_keeps_trace_identity():

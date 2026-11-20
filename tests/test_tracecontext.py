@@ -3,7 +3,7 @@
 Source: https://www.w3.org/TR/trace-context-1/#traceparent-header
 """
 
-from nahiarhdLOG.tracecontext import (
+from ox1log.tracecontext import (
     format_traceparent,
     new_span_id,
     new_trace_id,

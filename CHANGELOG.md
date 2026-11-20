@@ -1,11 +1,18 @@
 # Changelog
 
-All notable changes to `nahiarhdlog` will be documented in this file.
+All notable changes to 0x1LOG will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.2.0]
+
+### Changed
+
+- `0x1-log` now ships the implementation in `ox1log` and has no dependency on the legacy PyPI distribution. Update any `nahiarhdLOG` imports, including submodules, to `ox1log`.
+- New apps use `/0x1log` and `.0x1log/0x1log.db`. The legacy dashboard route is still available under the default configuration, and an existing legacy SQLite file is used when no database is specified.
 
 ## [0.9.0] - 2026-11-05
 

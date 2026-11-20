@@ -9,6 +9,7 @@ import logging
 import queue
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .postgres import PostgresStorage
@@ -24,7 +25,8 @@ _BATCH_SIZE = 500
 _PURGE_INTERVAL = 3600.0  # seconds
 
 # Default on-disk location: a dot-directory keeps project roots clean.
-DEFAULT_DB_PATH = ".nahiarhdlog/nahiarhdlog.db"
+DEFAULT_DB_PATH = ".0x1log/0x1log.db"
+_LEGACY_DB_PATH = ".nahiarhdlog/nahiarhdlog.db"
 
 _ERROR_ONLY = frozenset({"error"})
 
@@ -41,7 +43,7 @@ class Collector:
 
     def __init__(
         self,
-        db_path: str = DEFAULT_DB_PATH,
+        db_path: str | None = None,
         retention_days: int = 7,
         queue_size: int = 10_000,
         alerter: Alerter | None = None,
@@ -53,10 +55,15 @@ class Collector:
         # Postgres history, and anything else stays zero-infrastructure.
         if storage is not None:
             self.storage = storage
-        elif db_path.startswith(("postgresql://", "postgres://")):
-            self.storage = PostgresStorage(db_path, retention_days=retention_days)
         else:
-            self.storage = SQLiteStorage(db_path, retention_days=retention_days)
+            if db_path is None:
+                db_path = (
+                    _LEGACY_DB_PATH if Path(_LEGACY_DB_PATH).is_file() else DEFAULT_DB_PATH
+                )
+            if db_path.startswith(("postgresql://", "postgres://")):
+                self.storage = PostgresStorage(db_path, retention_days=retention_days)
+            else:
+                self.storage = SQLiteStorage(db_path, retention_days=retention_days)
         self.alerter = alerter
         self._default_data = dict(default_data) if default_data else {}
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=queue_size)
@@ -74,7 +81,7 @@ class Collector:
         return threading.Thread(
             target=self._run,
             args=(self._stop,),
-            name="nahiarhdlog-writer",
+            name="ox1log-writer",
             daemon=True,
         )
 
@@ -210,7 +217,7 @@ class Collector:
                     with self._lock:
                         self._dropped += len(batch)
                     logger.warning(
-                        "nahiarhdlog: failed to persist batch of %d events: %s",
+                        "0x1LOG: failed to persist batch of %d events: %s",
                         len(batch),
                         exc,
                     )
@@ -234,7 +241,7 @@ class Collector:
                 with self._lock:
                     self._dropped += len(batch)
                 logger.warning(
-                    "nahiarhdlog: failed to persist shutdown batch of %d events: %s",
+                    "0x1LOG: failed to persist shutdown batch of %d events: %s",
                     len(batch),
                     exc,
                 )

@@ -1,4 +1,4 @@
-"""Demo app for nahiarhdlog.
+"""Demo app for 0x1LOG.
 
 Serve the demo (terminal 1):
     uv run python examples/basic_app.py serve
@@ -7,7 +7,7 @@ Generate traffic (terminal 2):
     uv run python examples/basic_app.py traffic --n 300
 
 Then open the dashboard:
-    http://127.0.0.1:8000/nahiarhdlog   (token: demo-token)
+    http://127.0.0.1:8000/0x1log   (token: demo-token)
 """
 
 from __future__ import annotations
@@ -19,20 +19,20 @@ import time
 
 from fastapi import FastAPI
 
-from nahiarhdLOG import observe
+from ox1log import observe
 
 log = logging.getLogger("demo")
 TOKEN = "demo-token"
 
 
 def build_app(db_path: str = "demo.db") -> FastAPI:
-    app = FastAPI(title="nahiarhdlog demo")
+    app = FastAPI(title="0x1LOG demo")
     observe(app, db_path=db_path, dashboard_token=TOKEN)
 
     @app.get("/")
     def index():
         log.info("index visited")
-        return {"app": "nahiarhdlog demo", "dashboard": "/nahiarhdlog"}
+        return {"app": "0x1LOG demo", "dashboard": "/0x1log"}
 
     @app.get("/ping")
     def ping():

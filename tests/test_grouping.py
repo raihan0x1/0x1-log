@@ -1,4 +1,4 @@
-from nahiarhdLOG.grouping import from_traceback, signature
+from ox1log.grouping import from_traceback, signature
 
 
 def test_signature_format_uses_basename():
@@ -32,14 +32,14 @@ def test_from_traceback_without_tb():
 
 
 def test_truncate_message_under_limit():
-    from nahiarhdLOG.grouping import truncate_message
+    from ox1log.grouping import truncate_message
 
     msg = "line1\nline2\nline3"
     assert truncate_message(msg, max_chars=100) == msg
 
 
 def test_truncate_message_preserves_head_and_tail_on_newlines():
-    from nahiarhdLOG.grouping import truncate_message
+    from ox1log.grouping import truncate_message
 
     lines = [f"frame_{i}: some code context here" for i in range(100)]
     lines.append("DomainError: something went wrong at the end")

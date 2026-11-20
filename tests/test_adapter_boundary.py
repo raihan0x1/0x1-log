@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent / "nahiarhdLOG"
+PKG = Path(__file__).resolve().parent.parent / "ox1log"
 ALLOWED_TOP = {"adapters", "dashboard"}
 BANNED_ROOTS = {"fastapi", "starlette"}
 

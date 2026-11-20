@@ -7,8 +7,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nahiarhdLOG import observe
-from nahiarhdLOG.dashboard.router import create_dashboard_router
+from ox1log import observe
+from ox1log.dashboard.router import create_dashboard_router
 
 # The TestClient logs every request at INFO; the dashboard's own root
 # handler would capture that harness noise into the test DB and pollute
@@ -75,7 +75,21 @@ def test_missing_token_warns_at_startup(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         observe(app, db_path=str(tmp_path / "t.db"))
     assert "dashboard_token" in caplog.text
-    assert "/nahiarhdlog" in caplog.text
+    assert "/0x1log" in caplog.text
+
+
+def test_branded_and_legacy_urls_share_a_protected_dashboard(client_and_collector):
+    client, _ = client_and_collector
+    for prefix in ("/0x1log", "/nahiarhdlog"):
+        assert client.get(f"{prefix}/api/health").status_code == 401
+        assert client.get(f"{prefix}/static/app.js").status_code == 200
+        login = client.post(f"{prefix}/api/login", json={"token": TOKEN})
+        assert login.status_code == 200
+        assert f"Path={prefix}" in login.headers["set-cookie"]
+        assert client.get(f"{prefix}/api/health").status_code == 200
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/0x1log/api/health" in paths
+    assert "/nahiarhdlog/api/health" not in paths
 
 
 def test_page_without_token_returns_lock(client_and_collector):
@@ -102,7 +116,7 @@ def test_bare_prefix_redirects_to_slash(client_and_collector):
 def test_health_reports_whether_replicas_share_storage(client_and_collector):
     # The dashboard warns about switching backends only for per-process
     # storage; with Postgres every replica reads the same events.
-    from nahiarhdLOG.postgres import PostgresStorage
+    from ox1log.postgres import PostgresStorage
 
     client, _ = client_and_collector
     health = client.get("/nahiarhdlog/api/health", params={"token": TOKEN}).json()
@@ -274,7 +288,7 @@ def test_errors_top_trace_metrics_health(client_and_collector):
 
 
 def test_custom_prefix(tmp_path):
-    from nahiarhdLOG.collector import Collector
+    from ox1log.collector import Collector
 
     collector = Collector(str(tmp_path / "t.db")).start()
     try:
@@ -288,7 +302,7 @@ def test_custom_prefix(tmp_path):
 
 
 def test_router_requires_token(tmp_path):
-    from nahiarhdLOG.collector import Collector
+    from ox1log.collector import Collector
 
     collector = Collector(str(tmp_path / "t.db"))
     try:

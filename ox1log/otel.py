@@ -20,8 +20,8 @@ def _require_otel() -> Any:
         return trace
     except ImportError as e:
         raise RuntimeError(
-            "nahiarhdlog[otel] is not installed;"
-            " run pip install 'nahiarhdlog[otel]'"
+            "0x1-log[otel] is not installed;"
+            " run pip install '0x1-log[otel]'"
         ) from e
 
 

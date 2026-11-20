@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from nahiarhdLOG import attach
-from nahiarhdLOG.handler import NahiarhdHandler
+from ox1log import attach
+from ox1log.handler import NahiarhdHandler
 
 
 def _detach(collector) -> None:
@@ -60,7 +60,7 @@ def test_child_process_logs_show_up_in_the_same_db(tmp_path):
     child = tmp_path / "child.py"
     child.write_text(
         "import logging\n"
-        "from nahiarhdLOG import attach\n"
+        "from ox1log import attach\n"
         f"c = attach({db!r}, source='worker')\n"
         "logging.getLogger('child').error('from-child-process')\n"
         "assert c.flush()\n"
@@ -80,7 +80,7 @@ def test_child_process_logs_show_up_in_the_same_db(tmp_path):
 
 
 def test_attach_import_does_not_need_fastapi():
-    import nahiarhdLOG.attach as mod
+    import ox1log.attach as mod
 
     assert not hasattr(mod, "fastapi")
     assert not hasattr(mod, "FastAPI")

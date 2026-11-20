@@ -1,8 +1,8 @@
 ---
 version: 1
-slug: "nahiarhdlog-dashboard-static-index-html"
-primary_target: "nahiarhdLOG/dashboard/static/index.html"
-related_targets: ["nahiarhdLOG/dashboard/static/app.js","nahiarhdLOG/dashboard/static/styles.css","nahiarhdLOG/dashboard/static/lock.html"]
+slug: "ox1log-dashboard-static-index-html"
+primary_target: "ox1log/dashboard/static/index.html"
+related_targets: ["ox1log/dashboard/static/app.js","ox1log/dashboard/static/styles.css","ox1log/dashboard/static/lock.html"]
 ---
 
 # Dashboard surface
@@ -11,7 +11,7 @@ Scope: the embedded dashboard (index, lock screen) served at the host app's pref
 
 Audience and job: mixed developers (see PRODUCT.md). All four jobs are frequent and equal: live tail, error investigation, AI/span trace reading, post-deploy health. The user asked for more capability where it serves those jobs.
 
-Constraints: name "nahiarhdlog" is fixed; mark may be redesigned. Theme follows the OS, both themes finished, manual toggle. Self-contained static files, no runtime network. Standard web controls only.
+Constraints: product name "0x1LOG"; mark may be redesigned. Theme follows the OS, both themes finished, manual toggle. Self-contained static files, no runtime network. Standard web controls only.
 
 Additions for this round: service status in the header (derived from the last 5 minutes of requests), event-volume histogram over the log table that narrows the time range on click, a non-modal inspector panel with j/k row navigation, copy-as-cURL for requests.
 

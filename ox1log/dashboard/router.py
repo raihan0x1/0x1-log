@@ -49,7 +49,7 @@ _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache", "Expires": "0"}
 
 
 def _static_root() -> Path:
-    return Path(str(resources.files("nahiarhdLOG.dashboard") / "static"))
+    return Path(str(resources.files("ox1log.dashboard") / "static"))
 
 
 def _slash_redirect(request: Request) -> RedirectResponse:

@@ -2,16 +2,16 @@ import time
 
 import pytest
 
-from nahiarhdLOG.alerter import (
+from ox1log.alerter import (
     Alerter,
     Rule,
     SmtpSink,
     TelegramSink,
     WebhookSink,
 )
-from nahiarhdLOG.collector import Collector
-from nahiarhdLOG.query import top_errors
-from nahiarhdLOG.storage import SQLiteStorage
+from ox1log.collector import Collector
+from ox1log.query import top_errors
+from ox1log.storage import SQLiteStorage
 
 
 class FakeClock:

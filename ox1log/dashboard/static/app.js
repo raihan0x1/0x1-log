@@ -1,4 +1,4 @@
-/* nahiarhdlog dashboard. Vanilla JS, no dependencies.
+/* 0x1LOG dashboard. Vanilla JS, no dependencies.
    The app's runtime as a transit network: each event kind is a line,
    a trace is a route, red is disruption. */
 (function () {

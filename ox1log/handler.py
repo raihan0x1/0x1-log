@@ -50,7 +50,7 @@ _RECORD_BUILTIN = frozenset(
 )
 
 
-class NahiarhdHandler(logging.Handler):
+class LogHandler(logging.Handler):
     """A `logging.Handler` that forwards records to the collector."""
 
     def __init__(self, collector: Collector, level: int = logging.NOTSET) -> None:
@@ -59,7 +59,7 @@ class NahiarhdHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            if record.name.startswith("nahiarhdLOG"):
+            if record.name.startswith("ox1log"):
                 return
             message = record.getMessage()
             has_exc = bool(record.exc_info and record.exc_info[0] is not None)
@@ -114,14 +114,17 @@ class NahiarhdHandler(logging.Handler):
             self.handleError(record)
 
 
+NahiarhdHandler = LogHandler
+
+
 def ensure_handler(collector: Collector, level: int = logging.NOTSET) -> None:
-    """Attach a `NahiarhdHandler` to the root logger if this collector lacks one."""
+    """Attach a `LogHandler` to the root logger if this collector lacks one."""
     root = logging.getLogger()
     for handler in root.handlers:
-        if isinstance(handler, NahiarhdHandler) and handler.collector is collector:
+        if isinstance(handler, LogHandler) and handler.collector is collector:
             handler.setLevel(level)
             return
-    root.addHandler(NahiarhdHandler(collector, level=level))
+    root.addHandler(LogHandler(collector, level=level))
 
 
 Excepthook = Callable[

@@ -1,7 +1,8 @@
 """Bump the release version in pyproject.toml, ox1log/__init__.py and CHANGELOG.md.
 
 Usage: python3 scripts/release_version.py [patch|minor|major|X.Y.Z]   (or `make release-version`)
-The CHANGELOG [Unreleased] notes become the new version's section, so write them first.
+The CHANGELOG [Unreleased] notes become the new version's section; when it is empty, the
+notes come from the conventional commit subjects since the last version's tag.
 Pushing the bumped version to main publishes it to PyPI (.github/workflows/publish.yml).
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,6 +32,41 @@ def next_version(current: str, bump: str) -> str:
     return new
 
 
+_SECTIONS = {"feat": "Added", "fix": "Fixed", "perf": "Fixed"}
+_CONVENTIONAL = re.compile(r"^(\w+)(?:\([^)]*\))?!?:\s*(.+)$")
+
+
+def notes_from_commits(subjects: list[str]) -> str:
+    """Group conventional commit subjects into Keep a Changelog sections (Added, Fixed, Changed)."""
+    grouped: dict[str, list[str]] = {}
+    for subject in subjects:
+        if subject.startswith("chore(release)"):
+            continue
+        match = _CONVENTIONAL.match(subject)
+        kind, text = (match.group(1), match.group(2)) if match else ("", subject)
+        grouped.setdefault(_SECTIONS.get(kind, "Changed"), []).append(text[:1].upper() + text[1:])
+    return "\n\n".join(
+        f"### {section}\n" + "\n".join(f"- {line}" for line in grouped[section])
+        for section in ("Added", "Fixed", "Changed")
+        if section in grouped
+    )
+
+
+def commit_subjects_since(root: Path, tag: str) -> list[str]:
+    def log() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "log", f"{tag}..HEAD", "--format=%s"], cwd=root, capture_output=True, text=True, check=False
+        )
+
+    result = log()
+    if result.returncode != 0:  # tags come from the GitHub release; fetch them once
+        subprocess.run(["git", "fetch", "--quiet", "--tags"], cwd=root, check=False)
+        result = log()
+    if result.returncode != 0:
+        raise SystemExit(f"no tag {tag}: write the notes under [Unreleased] in CHANGELOG.md")
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
 def release(root: Path, bump: str, today: datetime.date) -> tuple[str, str]:
     pyproject = root / "pyproject.toml"
     init = root / "ox1log" / "__init__.py"
@@ -47,7 +84,9 @@ def release(root: Path, bump: str, today: datetime.date) -> tuple[str, str]:
         raise SystemExit("CHANGELOG.md has no '## [Unreleased]' heading")
     notes, older_marker, older = rest.partition("\n## [")
     if not notes.strip():
-        raise SystemExit("CHANGELOG [Unreleased] is empty: write this release's notes first")
+        notes = notes_from_commits(commit_subjects_since(root, f"v{current}"))
+    if not notes.strip():
+        raise SystemExit(f"nothing to release: no commits since v{current} and [Unreleased] is empty")
 
     pyproject.write_text(text.replace(match.group(0), f'version = "{new}"', 1))
     init.write_text(re.sub(r'^__version__ = "[^"]+"', f'__version__ = "{new}"', init.read_text(), count=1, flags=re.MULTILINE))

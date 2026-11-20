@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-20
+
+### Fixed
+- **Ring buffers have a byte bound.** Each event's `data` is capped as a whole at `MAX_EVENT_DATA_CHARS` (16,384), shrinking the largest values first into truncated JSON text, so a ring holds at most `max_events` x that. Spans carrying whole vector-search bodies had grown one 5,000-event Redis list to 581 MB.
+- **AI spans store their completion once.** `set_completion()` also filled `output`; the event now keeps only `completion`.
+- **Dashboard reads no longer scan whole rings on every poll.** Unfiltered counts use `LLEN`, and `/api/metrics` reads only sources that stored a request event (none in lite mode).
+- **Dashboard polls never stack.** The 15 s health/status tick, metrics auto-refresh, and the 2 s live tail skip a tick while the previous call is still in flight; stacked full-ring scans from open tabs had taken one host to ~35 GB.
+
 ## [1.3.0] - 2026-11-20
 
 ### Added

@@ -1,4 +1,4 @@
-"""nahiarhdlog: embedded observability for FastAPI."""
+"""0x1LOG: embedded observability for FastAPI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .collector import Collector
 from .postgres import PostgresStorage
 from .span import AISpan, Span, ai_span, span
 
-__version__ = "0.9.1"
+__version__ = "1.2.0"
 __all__ = [
     "__version__",
     "AISpan",
@@ -24,7 +24,7 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    # Lazy so `import nahiarhdLOG` never requires FastAPI; only the
+    # Lazy so `import ox1log` never requires FastAPI; only the
     # framework adapter does.
     if name == "observe":
         from .adapters.fastapi import observe

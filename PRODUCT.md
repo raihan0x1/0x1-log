@@ -12,7 +12,7 @@ A mix, with no dominant type (confirmed): developers who ship their own FastAPI 
 
 ## Product Purpose
 
-nahiarhdlog is embedded observability for FastAPI: searchable logs, error grouping and alerts, request metrics, and tracing, with a token-locked dashboard served by the app itself. Success is a developer answering "what just happened, and why" without leaving their app or standing up infrastructure.
+0x1LOG is embedded observability for FastAPI: searchable logs, error grouping and alerts, request metrics, and tracing, with a token-locked dashboard served by the app itself. Success is a developer answering "what just happened, and why" without leaving their app or standing up infrastructure.
 
 ## Positioning
 
@@ -20,7 +20,7 @@ The observability lives inside the app it watches. One `pip install` and one `ob
 
 ## Operating Context
 
-- Mounted at a configurable prefix (default `/nahiarhdlog`) of the host app; locked screen until the token is entered (cookie afterwards).
+- Mounted at a configurable prefix (default `/0x1log`) of the host app; locked screen until the token is entered (cookie afterwards).
 - All four jobs are frequent and must stay one click away (confirmed): live-tailing logs while developing, investigating errors (signature → traceback → trace), reading AI/agent traces (request → spans → logs, tokens, prompts), and checking health after a deploy (throughput, error rate, p50/p95 latency). The user welcomes additional views or features that serve these jobs.
 - Used next to an editor, terminal, and the app's own UI; theme must follow the OS setting by default, with both light and dark fully finished, plus a manual toggle.
 - Event types: `log`, `request`, `error`, `span`. Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL. Spans have kinds such as llm, tool, embedding, agent, db, cache, http, auth, custom.
@@ -28,14 +28,14 @@ The observability lives inside the app it watches. One `pip install` and one `ob
 
 ## Capabilities and Constraints
 
-- Dashboard is static files shipped inside the Python package (`nahiarhdLOG/dashboard/static/`), served by FastAPI. Vanilla HTML/CSS/JS, no build step.
+- Dashboard is static files shipped inside the Python package (`ox1log/dashboard/static/`), served by FastAPI. Vanilla HTML/CSS/JS, no build step.
 - No external network dependencies at runtime: dashboards may run on closed networks, so fonts, scripts, and icons ship with the package (inferred from the zero-infrastructure positioning; not explicitly pinned by the user).
 - JSON API under `{prefix}/api/` (logs with filters and pagination, event detail, top error signatures, traces with summary, metrics overview, health). Data is retained for `retention_days` (default 7).
 - Sensitive values (auth headers, cookies, token/password fields) arrive already redacted; the UI must never re-expose the dashboard token in URLs.
 
 ## Brand Commitments
 
-- The name **nahiarhdlog** stays (confirmed). The logo/mark may be redesigned (confirmed); everything else about the look is open.
+- Use **0x1LOG** as the product name. The logo/mark may be redesigned (confirmed); everything else about the look is open.
 
 ## Evidence on Hand
 

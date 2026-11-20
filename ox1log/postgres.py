@@ -1,13 +1,13 @@
 """Postgres storage: shared history for multi-replica deployments.
 
-Duck-typed like :class:`nahiarhdLOG.storage.SQLiteStorage` so it plugs into
+Duck-typed like :class:`ox1log.storage.SQLiteStorage` so it plugs into
 ``Collector(storage=...)``. Point ``db_path`` at a ``postgresql://`` URL and
 the collector picks this backend automatically; every pod then reads and
 writes the same table and the dashboard stops flip-flopping between
 per-pod SQLite files.
 
-Requires the ``postgres`` extra (``pip install nahiarhdlog[postgres]``).
-The driver import stays lazy so ``import nahiarhdLOG`` never needs it.
+Requires the ``postgres`` extra (``pip install 0x1-log[postgres]``).
+The driver import stays lazy so ``import ox1log`` never needs it.
 
 Framework-agnostic: this module must never import FastAPI/Starlette.
 """
@@ -53,7 +53,7 @@ def _require_driver() -> Any:
     if psycopg is None:
         raise ImportError(
             "PostgresStorage needs the 'postgres' extra: "
-            "pip install nahiarhdlog[postgres]"
+            "pip install 0x1-log[postgres]"
         )
     return psycopg
 

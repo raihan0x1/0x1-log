@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nahiarhdLOG import observe
+from ox1log import observe
 
 
 def test_shutdown_runs_when_lifespan_exits(tmp_path):

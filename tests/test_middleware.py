@@ -2,7 +2,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nahiarhdLOG import observe
+from ox1log import observe
 
 
 @pytest.fixture()
@@ -92,8 +92,8 @@ def test_exception_yields_error_and_500_request(app_and_collector):
 
 
 def test_skip_prefixes_passthrough_without_logging(tmp_path):
-    from nahiarhdLOG.collector import Collector
-    from nahiarhdLOG.middleware import LoggingMiddleware
+    from ox1log.collector import Collector
+    from ox1log.middleware import LoggingMiddleware
 
     collector = Collector(str(tmp_path / "t.db")).start()
     app = FastAPI()
@@ -121,8 +121,8 @@ def test_skip_prefixes_passthrough_without_logging(tmp_path):
 
 
 def test_sampling_drops_ok_requests_but_keeps_errors(tmp_path):
-    from nahiarhdLOG.collector import Collector
-    from nahiarhdLOG.middleware import LoggingMiddleware
+    from ox1log.collector import Collector
+    from ox1log.middleware import LoggingMiddleware
 
     collector = Collector(str(tmp_path / "t.db")).start()
     app = FastAPI()

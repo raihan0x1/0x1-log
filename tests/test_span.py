@@ -2,9 +2,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import nahiarhdLOG
-from nahiarhdLOG import ai_span, observe, span
-from nahiarhdLOG.collector import Collector
+import ox1log
+from ox1log import ai_span, observe, span
+from ox1log.collector import Collector
 
 
 def test_span_basic_lifecycle(tmp_path):

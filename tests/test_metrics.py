@@ -2,9 +2,9 @@ import time
 
 import pytest
 
-from nahiarhdLOG.metrics import quantile, request_stats, timeseries
-from nahiarhdLOG.query import get_trace
-from nahiarhdLOG.storage import SQLiteStorage
+from ox1log.metrics import quantile, request_stats, timeseries
+from ox1log.query import get_trace
+from ox1log.storage import SQLiteStorage
 
 
 @pytest.fixture()
@@ -91,7 +91,7 @@ def test_get_trace_oldest_first(storage):
 
 
 def test_overview_matches_separate_calls(storage):
-    from nahiarhdLOG.metrics import overview
+    from ox1log.metrics import overview
 
     now = time.time()
     storage.insert_many(
@@ -104,7 +104,7 @@ def test_overview_matches_separate_calls(storage):
 
 
 def test_trace_duration_covers_work_after_the_response():
-    from nahiarhdLOG.query import summarize_trace
+    from ox1log.query import summarize_trace
 
     events = [
         {"ts": 100.0, "type": "request", "data": {"duration_ms": 50.0}},

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI  # noqa: E402
 
-from nahiarhdLOG import observe  # noqa: E402
+from ox1log import observe  # noqa: E402
 
 BUDGET_MS = 5.0
 

@@ -1,4 +1,4 @@
-"""AI Agent Tracing Demo for nahiarhdlog.
+"""AI Agent Tracing Demo for 0x1LOG.
 
 Demonstrates:
 1. Automatic HTTP request/response body capture (prompts, completion JSON).
@@ -10,21 +10,21 @@ Run the demo:
     uv run python examples/ai_agent_tracing.py
 
 Then open:
-    http://127.0.0.1:8000/nahiarhdlog  (token: demo-token)
+    http://127.0.0.1:8000/0x1log  (token: demo-token)
 """
 
 import time
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-import nahiarhdLOG
-from nahiarhdLOG import ai_span, span
+import ox1log
+from ox1log import ai_span, span
 
 app = FastAPI(title="AI Agent Proxy")
 TOKEN = "demo-token"
 
 # Observe app with body capture enabled
-nahiarhdLOG.observe(app, dashboard_token=TOKEN, capture_body=True)
+ox1log.observe(app, dashboard_token=TOKEN, capture_body=True)
 
 
 class PromptRequest(BaseModel):
@@ -115,5 +115,5 @@ if __name__ == "__main__":
             print(f"Note: Automatic seed request returned: {err}")
 
     threading.Thread(target=seed_initial_traces, daemon=True).start()
-    print("✓ Starting server at http://127.0.0.1:8000/nahiarhdlog/ (token: demo-token)\n")
+    print("✓ Starting server at http://127.0.0.1:8000/0x1log/ (token: demo-token)\n")
     uvicorn.run(app, host="127.0.0.1", port=8000)

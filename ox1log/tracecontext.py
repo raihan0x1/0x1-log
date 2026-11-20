@@ -12,10 +12,10 @@ from contextvars import ContextVar
 from typing import NamedTuple
 
 current_trace_id: ContextVar[str | None] = ContextVar(
-    "nahiarhdlog_trace_id", default=None
+    "ox1log_trace_id", default=None
 )
 current_span_id: ContextVar[str | None] = ContextVar(
-    "nahiarhdlog_span_id", default=None
+    "ox1log_span_id", default=None
 )
 
 # version-format = trace-id "-" parent-id "-" trace-flags  (version 00)

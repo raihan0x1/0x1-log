@@ -2,9 +2,9 @@ import logging
 
 import pytest
 
-from nahiarhdLOG.collector import Collector
-from nahiarhdLOG.handler import NahiarhdHandler, install_excepthook
-from nahiarhdLOG.middleware import current_trace_id
+from ox1log.collector import Collector
+from ox1log.handler import LogHandler, install_excepthook
+from ox1log.middleware import current_trace_id
 
 
 @pytest.fixture()
@@ -15,7 +15,7 @@ def collector(tmp_path):
 
 
 def test_handler_forwards_record(collector):
-    handler = NahiarhdHandler(collector, level=logging.INFO)
+    handler = LogHandler(collector, level=logging.INFO)
     log = logging.getLogger("nahiarhdlog.test.forward")
     log.addHandler(handler)
     log.setLevel(logging.INFO)
@@ -32,7 +32,7 @@ def test_handler_forwards_record(collector):
 
 
 def test_handler_respects_level(collector):
-    handler = NahiarhdHandler(collector, level=logging.WARNING)
+    handler = LogHandler(collector, level=logging.WARNING)
     log = logging.getLogger("nahiarhdlog.test.level")
     log.addHandler(handler)
     log.setLevel(logging.DEBUG)
@@ -47,7 +47,7 @@ def test_handler_respects_level(collector):
 
 
 def test_handler_marks_exception_as_error(collector):
-    handler = NahiarhdHandler(collector)
+    handler = LogHandler(collector)
     log = logging.getLogger("nahiarhdlog.test.exc")
     log.addHandler(handler)
     try:
@@ -68,7 +68,7 @@ def test_handler_marks_exception_as_error(collector):
 
 def test_handler_skips_second_traceback_when_preformatted(collector):
     # Loguru-style: exc_info set AND message already carries a traceback.
-    handler = NahiarhdHandler(collector)
+    handler = LogHandler(collector)
     log = logging.getLogger("nahiarhdlog.test.pretb")
     log.addHandler(handler)
     log.setLevel(logging.DEBUG)
@@ -92,7 +92,7 @@ def test_handler_skips_second_traceback_when_preformatted(collector):
 
 
 def test_handler_keeps_stdlib_extra(collector):
-    handler = NahiarhdHandler(collector)
+    handler = LogHandler(collector)
     log = logging.getLogger("nahiarhdlog.test.extra")
     log.addHandler(handler)
     log.setLevel(logging.INFO)
@@ -108,7 +108,7 @@ def test_handler_keeps_stdlib_extra(collector):
 
 
 def test_handler_attaches_trace_id(collector):
-    handler = NahiarhdHandler(collector)
+    handler = LogHandler(collector)
     log = logging.getLogger("nahiarhdlog.test.trace")
     log.addHandler(handler)
     log.setLevel(logging.INFO)

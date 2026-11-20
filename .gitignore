@@ -37,7 +37,7 @@ htmlcov/
 # Development & local logs
 *.log
 
-# Local observability database (created by nahiarhdlog itself)
+# Local observability database (created by 0x1LOG)
 *.db
 *.db-shm
 *.db-wal

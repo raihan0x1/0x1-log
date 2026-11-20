@@ -1,6 +1,6 @@
 import time
 
-from nahiarhdLOG.collector import Collector
+from ox1log.collector import Collector
 
 
 def test_flush_pending_idle_returns_immediately(tmp_path):

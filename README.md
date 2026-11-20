@@ -3,8 +3,8 @@
 # 0x1LOG
 
 [![CI](https://github.com/raihan0x1/0x1-log/actions/workflows/ci.yml/badge.svg)](https://github.com/raihan0x1/0x1-log/actions)
-[![PyPI version](https://img.shields.io/pypi/v/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
-[![Python Version](https://img.shields.io/pypi/pyversions/nahiarhdlog.svg)](https://pypi.org/project/nahiarhdlog/)
+[![PyPI version](https://img.shields.io/pypi/v/0x1-log.svg)](https://pypi.org/project/0x1-log/)
+[![Python Version](https://img.shields.io/pypi/pyversions/0x1-log.svg)](https://pypi.org/project/0x1-log/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Embedded observability for FastAPI — searchable logs, error tracking, alerts, metrics, tracing, and a token-locked dashboard. Zero infrastructure: everything lives in one SQLite file.
@@ -16,7 +16,7 @@ Embedded observability for FastAPI — searchable logs, error tracking, alerts, 
 ## Why 0x1LOG?
 
 - **No infrastructure.** No ELK, no agents, no SaaS — `pip install` and you have history, search, and a UI.
-- **Embedded dashboard.** Your logs live at `/nahiarhdlog` inside your own app, behind your own token.
+- **Embedded dashboard.** Your logs live at `/0x1log` inside your own app, behind your own token.
 - **Negligible overhead.** Requests enqueue a small dict (p95 ~0.04 ms); SQLite writes happen in batches on a background thread. The queue is bounded — when full, events drop with a visible counter instead of ever blocking a request.
 - **Framework-agnostic core.** FastAPI first; the core imports no web framework, so Flask/Django adapters can follow without changing it.
 
@@ -26,20 +26,18 @@ Four steps. Nothing else is required for a FastAPI app.
 
 ### 1. Install
 
-Install `0x1-log` 1.1 or newer to import `ox1log`. Existing projects can keep installing `nahiarhdlog` and importing `nahiarhdLOG`. The examples that use submodules still import from `nahiarhdLOG`.
-
 ```bash
-uv add 0x1-log python-dotenv
-# or: pip install 0x1-log python-dotenv
+uv add "0x1-log>=1.2" python-dotenv
+# or: pip install "0x1-log>=1.2" python-dotenv
 ```
 
-Python ≥ 3.10. Logs land in `.nahiarhdlog/nahiarhdlog.db` (created automatically).
+Python ≥ 3.10. For a new app, logs land in `.0x1log/0x1log.db`.
 
 ### 2. Put a token in `.env`
 
 ```bash
 # .env  — do not commit this file
-NAHILOG_TOKEN=change-me-to-a-long-random-string
+OX1LOG_TOKEN=change-me-to-a-long-random-string
 ```
 
 0x1LOG **does not read `.env` for you.** Your app loads it and passes the value in. That way the same package works in every project.
@@ -55,7 +53,7 @@ from ox1log import observe
 load_dotenv()
 
 app = FastAPI()
-observe(app, dashboard_token=os.environ.get("NAHILOG_TOKEN"))
+observe(app, dashboard_token=os.environ.get("OX1LOG_TOKEN"))
 ```
 
 That captures every request, every stdlib log, and every uncaught exception.
@@ -66,7 +64,7 @@ That captures every request, every stdlib log, and every uncaught exception.
 uv run uvicorn main:app --reload
 ```
 
-Open `http://127.0.0.1:8000/nahiarhdlog/` and type the token from `.env`.
+Open `http://127.0.0.1:8000/0x1log/` and type the token from `.env`.
 
 No token set? Collection still runs; the URL shows a setup page instead of data.
 
@@ -75,19 +73,25 @@ No token set? Collection still runs; the URL shows a setup page instead of data.
 A second process has no FastAPI app, so `observe()` does not apply. In **that** process, point at the same database:
 
 ```python
-from nahiarhdLOG import attach
-attach()  # same default path: .nahiarhdlog/nahiarhdlog.db
+from ox1log import attach
+attach()  # same default path: .0x1log/0x1log.db
 ```
 
 Call it *in* the process that logs (after fork, if you use a prefork pool). Using [loguru](https://github.com/Delgan/loguru)? It does not go through stdlib — add the handler as a sink:
 
 ```python
-from nahiarhdLOG import attach
-from nahiarhdLOG.handler import NahiarhdHandler
+from ox1log import attach
+from ox1log.handler import LogHandler
 
 collector = attach()
-logger.add(NahiarhdHandler(collector), format="{message}")
+logger.add(LogHandler(collector), format="{message}")
 ```
+
+### Upgrade an existing app
+
+Replace the `nahiarhdlog` dependency with `0x1-log>=1.2` and update imports from `nahiarhdLOG` to `ox1log`, including submodules. The standalone release includes the implementation and its `otel` and `postgres` extras. In an existing environment, remove the old distribution after updating your dependencies and imports.
+
+If you keep your existing working directory, the default storage picks up `.nahiarhdlog/nahiarhdlog.db` when that file exists. Keep passing any explicit SQLite path or Postgres URL you already use. When the dashboard uses its defaults, old bookmarks under `/nahiarhdlog/` still work. Applications that pass their own `dashboard_prefix` keep that route.
 
 ## Features
 
@@ -98,7 +102,7 @@ logger.add(NahiarhdHandler(collector), format="{message}")
 | Alerts | Threshold rules (N events in M seconds) + cooldown; webhook, Telegram, and SMTP sinks |
 | Metrics | RPS, error rate, latency p50/p95, time-bucketed series — computed from the same request events |
 | Tracing | W3C `traceparent` in and out; one `trace_id` per request; traces drawn as a route (spans nest under the request, logs under the span they ran in) with a timeline; AI agent span tracing (`ai_span`, `span`); request & response payload inspection |
-| Dashboard | Embedded at `/nahiarhdlog`, token-locked, follows the OS theme (with a toggle), mobile-friendly, live tail, service status in the header, side inspector with `J`/`K` navigation and copy-as-cURL, self-contained (fonts ship with the package) |
+| Dashboard | Embedded at `/0x1log`, token-locked, follows the OS theme (with a toggle), mobile-friendly, live tail, service status in the header, side inspector with `J`/`K` navigation and copy-as-cURL, self-contained (fonts ship with the package) |
 
 <details>
 <summary><strong>Configuration</strong> — all arguments and <code>.env</code> wiring</summary>
@@ -107,9 +111,9 @@ logger.add(NahiarhdHandler(collector), format="{message}")
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `db_path` | `".nahiarhdlog/nahiarhdlog.db"` | SQLite file for events (parent dirs auto-created) |
+| `db_path` | `".0x1log/0x1log.db"` | SQLite file for events. An existing legacy default file takes precedence when the argument is omitted. |
 | `dashboard_token` | `None` (setup page) | Token for the dashboard; unset = setup page, data stays off |
-| `dashboard_prefix` | `"/nahiarhdlog"` | Where the dashboard lives |
+| `dashboard_prefix` | `"/0x1log"` | Where the dashboard lives |
 | `retention_days` | `7` | How long events are kept |
 | `sample_rate` | `1.0` | 1.0 = every request; 500s are always kept |
 | `level` | `logging.INFO` | Minimum stdlib level captured |
@@ -126,11 +130,11 @@ Trace multi-step AI agent workflows with child spans, token metrics, model param
 
 ```python
 from fastapi import FastAPI
-import nahiarhdLOG
-from nahiarhdLOG import ai_span, span
+import ox1log
+from ox1log import ai_span, span
 
 app = FastAPI()
-nahiarhdLOG.observe(app, dashboard_token="secret", capture_body=True)
+ox1log.observe(app, dashboard_token="secret", capture_body=True)
 
 @app.post("/api/proxy/v1/responses")
 def chat_agent(req: dict):
@@ -149,7 +153,7 @@ def chat_agent(req: dict):
     return {"response": "The answer is 4"}
 ```
 
-Open `/nahiarhdlog` and click **View trace** to see an interactive waterfall chart of every step, latency breakdowns, tokens used, and expandable request/response payloads.
+Open `/0x1log` and click **View trace** to see an interactive waterfall chart of every step, latency breakdowns, tokens used, and expandable request/response payloads.
 
 </details>
 
@@ -157,20 +161,20 @@ Typical `.env`-based wiring in your app:
 
 ```bash
 # .env (never commit this file)
-NAHILOG_DB=/var/lib/myapp/nahiarhdlog.db
-NAHILOG_TOKEN=long-random-secret
+OX1LOG_DB=/var/lib/myapp/0x1log.db
+OX1LOG_TOKEN=long-random-secret
 ```
 
 ```python
 import os
 from fastapi import FastAPI
-from nahiarhdLOG import observe
+from ox1log import observe
 
 app = FastAPI()
 observe(
     app,
-    db_path=os.environ.get("NAHILOG_DB", ".nahiarhdlog/nahiarhdlog.db"),
-    dashboard_token=os.environ.get("NAHILOG_TOKEN"),  # None = setup page, data stays off
+    db_path=os.environ.get("OX1LOG_DB"),
+    dashboard_token=os.environ.get("OX1LOG_TOKEN"),  # None = setup page, data stays off
 )
 ```
 
@@ -182,7 +186,7 @@ observe(
 <summary><strong>Alerts &amp; OpenTelemetry</strong> — rules, sinks, trace export</summary>
 
 ```python
-from nahiarhdLOG.alerter import Rule, SmtpSink, TelegramSink, WebhookSink
+from ox1log.alerter import Rule, SmtpSink, TelegramSink, WebhookSink
 
 observe(
     app,
@@ -199,12 +203,12 @@ observe(
 Rules evaluate in a background thread; a failing sink never blocks the others. A rule counts `error` events by default; set `event_type` to watch another kind, e.g. `Rule("traffic-spike", count=1000, window_seconds=60, event_type="request")`.
 
 ```bash
-pip install "nahiarhdlog[otel]"
+pip install "0x1-log[otel]>=1.2"
 ```
 
 ```python
-from nahiarhdLOG.otel import export_trace
-from nahiarhdLOG.query import get_trace
+from ox1log.otel import export_trace
+from ox1log.query import get_trace
 
 export_trace(get_trace(collector.storage, trace_id))  # keeps the original trace id
 ```
@@ -221,15 +225,15 @@ uv run python examples/basic_app.py serve
 uv run python examples/basic_app.py traffic --n 300
 ```
 
-Open `http://127.0.0.1:8000/nahiarhdlog/` with token `demo-token`.
+Open `http://127.0.0.1:8000/0x1log/` with token `demo-token`.
 
 ## FAQ
 
-**Does nahiarhdlog read my `.env`?** No. Load it yourself (`load_dotenv()`, your env helper, or the platform's env) and pass `dashboard_token=` / `db_path=` in. The package never opens `.env`, so it behaves the same in every project.
+**Does 0x1LOG read my `.env`?** No. Load it yourself (`load_dotenv()`, your env helper, or the platform's env) and pass `dashboard_token=` / `db_path=` in. The package never opens `.env`, so it behaves the same in every project.
 
 **Which Python versions?** 3.10+ (3.10, 3.11, 3.12 tested in CI).
 
-**Where is data stored?** One SQLite file (`.nahiarhdlog/nahiarhdlog.db` by default), WAL mode, FTS5 index for search. Delete the directory to wipe everything. Set `retention_days` for automatic purging. Pass a `postgresql://` URL as `db_path` instead (with `pip install nahiarhdlog[postgres]`) and history lives in one shared `nahiarhdlog_events` table.
+**Where is data stored?** One SQLite file (`.0x1log/0x1log.db` for new installs), with WAL mode and an FTS5 search index. Set `retention_days` for automatic purging. With `pip install "0x1-log[postgres]>=1.2"`, pass a `postgresql://` URL as `db_path` to store history in a shared Postgres table.
 
 **Can two machines share one SQLite file?** No. WAL requires every process on the **same host** (same volume). It does not work over a network filesystem, so an API pod and a worker pod each get their own database unless they mount the same disk. That is a SQLite limit, not a bug. For multi-host history, use the Postgres backend: every process points `db_path` at the same URL, or plug a custom storage backend via `Collector(storage=...)`.
 
@@ -263,7 +267,7 @@ Non-goals for now: Flask/Django adapters and a Postgres backend. The core stays 
 SQLite is the default and stays zero-infrastructure. But storage is a small duck-typed interface — if you ever outgrow SQLite (multi-host shared history, extreme write concurrency), plug your own backend without forking:
 
 ```python
-from nahiarhdLOG.collector import Collector
+from ox1log.collector import Collector
 
 collector = Collector(storage=PostgresStorage(dsn))  # your class, your infra
 ```

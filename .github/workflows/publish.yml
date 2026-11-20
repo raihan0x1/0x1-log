@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/nahiarhdlog
+      url: https://pypi.org/p/0x1-log
     permissions:
       id-token: write
     steps:

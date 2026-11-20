@@ -1,5 +1,5 @@
 ---
-name: nahiarhdlog
+name: 0x1LOG
 description: Embedded observability dashboard drawn as a transit network map, where every event kind is a line and red means disruption.
 colors:
   ground: "#ffffff"
@@ -384,7 +384,7 @@ components:
     padding: "28px 28px 24px"
 ---
 
-# Design System: nahiarhdlog
+# Design System: 0x1LOG
 
 ## Overview
 
@@ -468,7 +468,7 @@ Service states. Each has a solid colour for strokes and fills, a soft wash, and 
 - **Display** (800, 26px, 1.15, -0.01em, tabular): stat figures in the metrics strip; the unit rides beside at 13px/600 in Muted.
 - **Count** (800, 22px, tabular): signature counts in the disruption list, in Disruption Ink.
 - **Headline** (800, 20px, 1.45, -0.01em): the line-status heading on Metrics and the lock screen heading.
-- **Wordmark** (800, 17px, -0.01em): "nahiarhdlog", always lowercase, beside the mark.
+- **Wordmark** (800, 17px, -0.01em): "0x1LOG", with uppercase LOG, beside the mark.
 - **Title** (750, 16px, 1.3): the inspector's event title.
 - **Title Small** (750, 14px): chart captions. The same weight runs half a step up for the status popover heading (15px) and half a step down for inspector section heads (13.5px).
 - **Tab** (650, 14.5px): band tabs.

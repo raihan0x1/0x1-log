@@ -15,12 +15,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
-import nahiarhdLOG
-from nahiarhdLOG.collector import Collector
-from nahiarhdLOG.metrics import request_stats
-from nahiarhdLOG.postgres import PostgresStorage, _escape_like
-from nahiarhdLOG.query import LogFilter, get_trace, search_logs
-from nahiarhdLOG.storage import SQLiteStorage
+import ox1log
+from ox1log.collector import Collector
+from ox1log.metrics import request_stats
+from ox1log.postgres import PostgresStorage, _escape_like
+from ox1log.query import LogFilter, get_trace, search_logs
+from ox1log.storage import SQLiteStorage
 
 _TEST_DB = "nahiarhdlog_test"
 
@@ -70,7 +70,7 @@ def _event(message="m", **kw):
 
 
 def test_postgres_storage_is_exported():
-    assert nahiarhdLOG.PostgresStorage is PostgresStorage
+    assert ox1log.PostgresStorage is PostgresStorage
 
 
 def test_collector_selects_postgres_for_postgresql_url(monkeypatch):
@@ -81,7 +81,7 @@ def test_collector_selects_postgres_for_postgresql_url(monkeypatch):
             seen["dsn"] = dsn
             seen["retention_days"] = retention_days
 
-    monkeypatch.setattr("nahiarhdLOG.collector.PostgresStorage", Stub)
+    monkeypatch.setattr("ox1log.collector.PostgresStorage", Stub)
     collector = Collector("postgresql://db:5432/logs", retention_days=3)
     assert isinstance(collector.storage, Stub)
     assert seen == {"dsn": "postgresql://db:5432/logs", "retention_days": 3}
@@ -92,7 +92,7 @@ def test_collector_selects_postgres_for_postgres_scheme(monkeypatch):
         def __init__(self, dsn, retention_days=7):
             pass
 
-    monkeypatch.setattr("nahiarhdLOG.collector.PostgresStorage", Stub)
+    monkeypatch.setattr("ox1log.collector.PostgresStorage", Stub)
     collector = Collector("postgres://db:5432/logs")
     assert isinstance(collector.storage, Stub)
 
@@ -106,8 +106,8 @@ def test_collector_keeps_sqlite_for_paths(tmp_path):
 
 
 def test_missing_driver_raises_helpful_error(monkeypatch):
-    monkeypatch.setattr("nahiarhdLOG.postgres.psycopg", None)
-    with pytest.raises(ImportError, match=r"pip install nahiarhdlog\[postgres\]"):
+    monkeypatch.setattr("ox1log.postgres.psycopg", None)
+    with pytest.raises(ImportError, match=r"pip install 0x1-log\[postgres\]"):
         PostgresStorage("postgresql://db:5432/logs")
 
 

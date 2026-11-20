@@ -78,7 +78,7 @@ class SmtpSink(AlertSink):
         self,
         host: str,
         to_addrs: list[str],
-        from_addr: str = "nahiarhdlog@localhost",
+        from_addr: str = "ox1log@localhost",
         port: int = 587,
         username: str | None = None,
         password: str | None = None,
@@ -141,7 +141,7 @@ class Alerter:
         return threading.Thread(
             target=self._run,
             args=(self._stop,),
-            name="nahiarhdlog-alerter",
+            name="ox1log-alerter",
             daemon=True,
         )
 
@@ -205,7 +205,7 @@ class Alerter:
         sig = data.get("signature", "(unknown)")
         what = "errors" if rule.event_type == "error" else f"{rule.event_type} events"
         subject = (
-            f"[nahiarhdlog] {rule.name}: "
+            f"[0x1LOG] {rule.name}: "
             f"{rule.count} {what} in {rule.window_seconds:.0f}s"
         )
         body = f"Latest: {sig}\n{(event.get('message') or '')[:500]}"

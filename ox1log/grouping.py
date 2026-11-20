@@ -46,11 +46,11 @@ def truncate_message(message: str, max_chars: int = DEFAULT_MAX_MESSAGE) -> str:
         return message
 
     marker_template = "\n\n[... {count} characters truncated ...]\n\n"
-    budget = max_chars - 80
-    if budget <= 0:
+    budget = max_chars - 50
+    if budget < 20:
         return message[-max_chars:]
 
-    head_budget = max(100, budget // 3)
+    head_budget = max(1, budget // 3)
     tail_budget = budget - head_budget
 
     head_sub = message[:head_budget]

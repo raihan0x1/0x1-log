@@ -68,7 +68,7 @@ def test_collector_restarts_when_lifespan_runs_again(tmp_path):
         assert collector.running
         client.get("/ping")
         assert collector.flush()
-        r = client.get("/nahiarhdlog/api/logs", params={"type": "request"},
+        r = client.get("/0x1log/api/logs", params={"type": "request"},
                        headers={"Authorization": "Bearer tok"})
         assert r.status_code == 200
         assert r.json()["total"] == 2

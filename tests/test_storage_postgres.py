@@ -1,9 +1,9 @@
 """Postgres backend: shared history for multi-replica deployments.
 
-Live tests need a reachable Postgres; point NAHILOG_TEST_PG_URL at an
+Live tests need a reachable Postgres; point OX1LOG_TEST_PG_URL at an
 admin database (CI provides one, see .github/workflows/ci.yml):
 
-    NAHILOG_TEST_PG_URL=postgresql://user:pass@localhost:5432/postgres \
+    OX1LOG_TEST_PG_URL=postgresql://user:pass@localhost:5432/postgres \
         pytest tests/test_storage_postgres.py
 
 Without the variable the live tests skip; backend selection and the
@@ -22,7 +22,7 @@ from ox1log.postgres import PostgresStorage, _escape_like
 from ox1log.query import LogFilter, get_trace, search_logs
 from ox1log.storage import SQLiteStorage
 
-_TEST_DB = "nahiarhdlog_test"
+_TEST_DB = "0x1log_test"
 
 
 def _replace_dbname(dsn, name):
@@ -33,9 +33,9 @@ def _replace_dbname(dsn, name):
 @pytest.fixture(scope="session")
 def pg_dsn():
     psycopg = pytest.importorskip("psycopg")
-    admin = os.environ.get("NAHILOG_TEST_PG_URL")
+    admin = os.environ.get("OX1LOG_TEST_PG_URL")
     if not admin:
-        pytest.skip("NAHILOG_TEST_PG_URL not set (needs a Postgres server)")
+        pytest.skip("OX1LOG_TEST_PG_URL not set (needs a Postgres server)")
     dsn = _replace_dbname(admin, _TEST_DB)
     conn = psycopg.connect(admin, autocommit=True)
     try:
@@ -54,7 +54,7 @@ def pg_dsn():
 @pytest.fixture()
 def storage(pg_dsn):
     s = PostgresStorage(pg_dsn)
-    s._conn.execute("TRUNCATE nahiarhdlog_events")
+    s._conn.execute("TRUNCATE ox1log_events")
     s._conn.commit()
     yield s
     s.close()
@@ -261,7 +261,7 @@ def test_purge_removes_only_old_rows(pg_dsn):
     old = time.time() - 8 * 86400
     s = PostgresStorage(pg_dsn, retention_days=7)
     try:
-        s._conn.execute("TRUNCATE nahiarhdlog_events")
+        s._conn.execute("TRUNCATE ox1log_events")
         s._conn.commit()
         s.insert_many([_event("old", ts=old), _event("new")])
         assert s.purge() == 1
@@ -275,7 +275,7 @@ def test_purge_disabled_when_retention_nonpositive(pg_dsn):
 
     s = PostgresStorage(pg_dsn, retention_days=0)
     try:
-        s._conn.execute("TRUNCATE nahiarhdlog_events")
+        s._conn.execute("TRUNCATE ox1log_events")
         s._conn.commit()
         s.insert_many([_event("old", ts=time.time() - 30 * 86400)])
         assert s.purge() == 0
@@ -289,7 +289,7 @@ def test_two_connections_share_history(pg_dsn):
     first = PostgresStorage(pg_dsn)
     second = PostgresStorage(pg_dsn)
     try:
-        first._conn.execute("TRUNCATE nahiarhdlog_events")
+        first._conn.execute("TRUNCATE ox1log_events")
         first._conn.commit()
         first.insert_many([_event("from-pod-a", trace_id="shared-trace-1")])
         assert second.count() == 1
@@ -317,7 +317,7 @@ def test_use_after_close_fails_fast(pg_dsn):
 def test_collector_end_to_end_over_postgres(pg_dsn):
     collector = Collector(pg_dsn)
     assert isinstance(collector.storage, PostgresStorage)
-    collector.storage._conn.execute("TRUNCATE nahiarhdlog_events")
+    collector.storage._conn.execute("TRUNCATE ox1log_events")
     collector.storage._conn.commit()
     collector.start()
     try:

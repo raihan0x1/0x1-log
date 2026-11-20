@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-20
+
+### Added
+- **`mode="lite"` for zero-DB ephemeral Service Logs.** Skips `LoggingMiddleware` (no HTTP request/body capture) and defaults to a bounded in-memory ring buffer (`memory://`, 5000 events per source) so logs never bloat Postgres or disk.
+- **In-memory ring buffer (`MemoryStorage`, `db_path="memory://"`).** Zero-infrastructure default for `mode="lite"` with bounded per-source retention (`max_events=5000`) and message truncation (`max_message_chars=8192`).
+- **Opt-in Redis ring buffer (`pip install '0x1-log[redis]'`, `RedisStorage`).** Pass `db_path="redis://..."` with `key_prefix`, `max_events` per source, and `ttl_seconds` (24h default) to merge multi-pod API and worker logs without touching Postgres.
+- **`source` filtering, `after_id` cursor polling, and active `sources` discovery.** `GET /0x1log/api/logs` accepts `source` and `after_id` (ascending cursor pagination); `GET /0x1log/api/health` returns `mode`, `storage`, and active `sources`.
+- **Dynamic level sync (`collector.set_level()`).** Updates bound handler thresholds at runtime (including Loguru sinks calling `emit()` directly) so captured logs track active terminal severity across dev/prod transitions.
+
+### Changed
+- Removed remaining legacy `nahiarhdlog` fallbacks (`/nahiarhdlog` prefix, `.nahiarhdlog/nahiarhdlog.db` fallback, `nahiarhdlog_token` cookie → `ox1log_token`, `nahiarhdlog_events` table → `ox1log_events`, and `ox1log.*` OpenTelemetry attributes). `LogHandler` remains available as an alias for `Ox1logHandler`.
+
+### Fixed
+- `truncate_message()` now respects small `max_chars` limits instead of expanding short messages with a negative tail budget.
+- `SQLiteStorage` sets `PRAGMA synchronous=NORMAL` alongside WAL for lower disk fsync overhead, and `Collector.flush_pending()` wakes the writer thread immediately instead of sleeping for the flush interval.
+
 ## [1.2.0]
 
 ### Changed

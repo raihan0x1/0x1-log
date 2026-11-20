@@ -9,8 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .memory import MemoryStorage
 from .postgres import PostgresStorage
+from .redis_storage import RedisStorage
 from .storage import SQLiteStorage
+
+StorageLike = SQLiteStorage | PostgresStorage | MemoryStorage | RedisStorage
 
 _MAX_LIMIT = 1000
 
@@ -22,6 +26,8 @@ class LogFilter:
     event_type: str | None = None
     trace_id: str | None = None
     signature: str | None = None
+    source: str | None = None
+    after_id: int | None = None
     since: float | None = None
     until: float | None = None
     limit: int = 100
@@ -34,6 +40,8 @@ class LogFilter:
             event_type=self.event_type,
             trace_id=self.trace_id,
             signature=self.signature or None,
+            source=self.source or None,
+            after_id=int(self.after_id) if self.after_id is not None else None,
             since=self.since,
             until=self.until,
             limit=max(1, min(int(self.limit), _MAX_LIMIT)),
@@ -41,8 +49,13 @@ class LogFilter:
         )
 
 
-def search_logs(storage: SQLiteStorage | PostgresStorage, filt: LogFilter) -> list[dict[str, Any]]:
+def search_logs(storage: StorageLike, filt: LogFilter) -> list[dict[str, Any]]:
     f = filt.normalized()
+    extra: dict[str, Any] = {}
+    if f.source is not None:
+        extra["source"] = f.source
+    if f.after_id is not None:
+        extra["after_id"] = f.after_id
     return storage.search(
         text=f.text,
         level=f.level,
@@ -53,11 +66,17 @@ def search_logs(storage: SQLiteStorage | PostgresStorage, filt: LogFilter) -> li
         until=f.until,
         limit=f.limit,
         offset=f.offset,
+        **extra,
     )
 
 
-def count_logs(storage: SQLiteStorage | PostgresStorage, filt: LogFilter) -> int:
+def count_logs(storage: StorageLike, filt: LogFilter) -> int:
     f = filt.normalized()
+    extra: dict[str, Any] = {}
+    if f.source is not None:
+        extra["source"] = f.source
+    if f.after_id is not None:
+        extra["after_id"] = f.after_id
     return storage.count(
         text=f.text,
         level=f.level,
@@ -66,11 +85,19 @@ def count_logs(storage: SQLiteStorage | PostgresStorage, filt: LogFilter) -> int
         signature=f.signature,
         since=f.since,
         until=f.until,
+        **extra,
     )
 
 
+def list_sources(storage: Any) -> list[str]:
+    fn = getattr(storage, "sources", None)
+    if fn is None:
+        return []
+    return list(fn())
+
+
 def log_histogram(
-    storage: SQLiteStorage | PostgresStorage, filt: LogFilter, buckets: int = 60
+    storage: StorageLike, filt: LogFilter, buckets: int = 60
 ) -> dict[str, Any] | None:
     """Event volume over time for a filter, or None when the storage
     (a custom backend) does not implement `histogram`."""
@@ -90,18 +117,18 @@ def log_histogram(
     )
 
 
-def get_event(storage: SQLiteStorage | PostgresStorage, event_id: int) -> dict[str, Any] | None:
+def get_event(storage: StorageLike, event_id: int) -> dict[str, Any] | None:
     return storage.get(int(event_id))
 
 
 def top_errors(
-    storage: SQLiteStorage | PostgresStorage, since: float | None = None, limit: int = 20
+    storage: StorageLike, since: float | None = None, limit: int = 20
 ) -> list[dict[str, Any]]:
     return storage.top_signatures(since=since, limit=limit)
 
 
 def get_trace(
-    storage: SQLiteStorage | PostgresStorage, trace_id: str, limit: int = 500
+    storage: StorageLike, trace_id: str, limit: int = 500
 ) -> list[dict[str, Any]]:
     """All events of one trace, oldest first (v1: flat, single-service).
 

@@ -56,17 +56,17 @@ def test_missing_token_serves_setup_page(tmp_path):
     app = FastAPI()
     observe(app, db_path=str(tmp_path / "t.db"))
     with TestClient(app) as client:
-        page = client.get("/nahiarhdlog/")
+        page = client.get("/0x1log/")
         assert page.status_code == 200
         assert "text/html" in page.headers["content-type"]
         assert page.headers["cache-control"] == "no-store"
         assert "dashboard_token" in page.text
-        assert "/nahiarhdlog" in page.text
+        assert "/0x1log" in page.text
         # No data APIs without a token — and the old default prefix is gone.
-        assert client.get("/nahiarhdlog/api/health").status_code == 404
-        bare = client.get("/nahiarhdlog", follow_redirects=False)
+        assert client.get("/0x1log/api/health").status_code == 404
+        bare = client.get("/0x1log", follow_redirects=False)
         assert bare.status_code == 307
-        assert bare.headers["location"] == "/nahiarhdlog/"
+        assert bare.headers["location"] == "/0x1log/"
         assert client.get("/admin/logs/").status_code == 404
 
 
@@ -78,23 +78,9 @@ def test_missing_token_warns_at_startup(tmp_path, caplog):
     assert "/0x1log" in caplog.text
 
 
-def test_branded_and_legacy_urls_share_a_protected_dashboard(client_and_collector):
-    client, _ = client_and_collector
-    for prefix in ("/0x1log", "/nahiarhdlog"):
-        assert client.get(f"{prefix}/api/health").status_code == 401
-        assert client.get(f"{prefix}/static/app.js").status_code == 200
-        login = client.post(f"{prefix}/api/login", json={"token": TOKEN})
-        assert login.status_code == 200
-        assert f"Path={prefix}" in login.headers["set-cookie"]
-        assert client.get(f"{prefix}/api/health").status_code == 200
-    paths = client.get("/openapi.json").json()["paths"]
-    assert "/0x1log/api/health" in paths
-    assert "/nahiarhdlog/api/health" not in paths
-
-
 def test_page_without_token_returns_lock(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/")
+    r = client.get("/0x1log/")
     assert r.status_code == 401
     assert "text/html" in r.headers["content-type"]
     assert "locked" in r.text.lower()
@@ -102,13 +88,13 @@ def test_page_without_token_returns_lock(client_and_collector):
 
 def test_bare_prefix_redirects_to_slash(client_and_collector):
     client, _ = client_and_collector
-    bare = client.get("/nahiarhdlog", follow_redirects=False)
+    bare = client.get("/0x1log", follow_redirects=False)
     assert bare.status_code == 307
-    assert bare.headers["location"] == "/nahiarhdlog/"
-    with_token = client.get("/nahiarhdlog", params={"token": TOKEN}, follow_redirects=False)
+    assert bare.headers["location"] == "/0x1log/"
+    with_token = client.get("/0x1log", params={"token": TOKEN}, follow_redirects=False)
     assert with_token.status_code == 307
-    assert with_token.headers["location"] == f"/nahiarhdlog/?token={TOKEN}"
-    followed = client.get("/nahiarhdlog", params={"token": TOKEN})
+    assert with_token.headers["location"] == f"/0x1log/?token={TOKEN}"
+    followed = client.get("/0x1log", params={"token": TOKEN})
     assert followed.status_code == 200
     assert "logs-table" in followed.text
 
@@ -119,84 +105,84 @@ def test_health_reports_whether_replicas_share_storage(client_and_collector):
     from ox1log.postgres import PostgresStorage
 
     client, _ = client_and_collector
-    health = client.get("/nahiarhdlog/api/health", params={"token": TOKEN}).json()
+    health = client.get("/0x1log/api/health", params={"token": TOKEN}).json()
     assert health["shared_storage"] is False
     assert PostgresStorage.shared is True
 
 
 def test_api_without_token_is_json_401(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/api/health")
+    r = client.get("/0x1log/api/health")
     assert r.status_code == 401
     assert r.headers["content-type"].startswith("application/json")
 
 
 def test_wrong_token_is_403(client_and_collector):
     client, _ = client_and_collector
-    assert client.get("/nahiarhdlog/api/health?token=nope").status_code == 403
-    assert client.get("/nahiarhdlog/", params={"token": "nope"}).status_code == 401
+    assert client.get("/0x1log/api/health?token=nope").status_code == 403
+    assert client.get("/0x1log/", params={"token": "nope"}).status_code == 401
 
 
 def test_login_cookie_persists_without_url_token(client_and_collector):
     client, _ = client_and_collector
-    r = client.post("/nahiarhdlog/api/login", json={"token": TOKEN})
+    r = client.post("/0x1log/api/login", json={"token": TOKEN})
     assert r.status_code == 200
-    assert "nahiarhdlog_token" in r.cookies
+    assert "ox1log_token" in r.cookies
     # Cookie alone now authenticates page + API (refresh-safe, new-tab-safe).
-    assert client.get("/nahiarhdlog/api/health").status_code == 200
-    page = client.get("/nahiarhdlog/")
+    assert client.get("/0x1log/api/health").status_code == 200
+    page = client.get("/0x1log/")
     assert page.status_code == 200
     assert "logs-table" in page.text
 
 
 def test_login_wrong_token_403_and_no_access(client_and_collector):
     client, _ = client_and_collector
-    assert client.post("/nahiarhdlog/api/login", json={"token": "nope"}).status_code == 403
-    assert client.post("/nahiarhdlog/api/login", json={}).status_code == 403
-    assert client.get("/nahiarhdlog/api/health").status_code == 401
+    assert client.post("/0x1log/api/login", json={"token": "nope"}).status_code == 403
+    assert client.post("/0x1log/api/login", json={}).status_code == 403
+    assert client.get("/0x1log/api/health").status_code == 401
 
 
 def test_logout_clears_cookie(client_and_collector):
     client, _ = client_and_collector
-    assert client.post("/nahiarhdlog/api/login", json={"token": TOKEN}).status_code == 200
-    assert client.get("/nahiarhdlog/api/health").status_code == 200
-    assert client.post("/nahiarhdlog/api/logout").status_code == 200
-    assert client.get("/nahiarhdlog/api/health").status_code == 401
-    assert client.get("/nahiarhdlog/").status_code == 401
+    assert client.post("/0x1log/api/login", json={"token": TOKEN}).status_code == 200
+    assert client.get("/0x1log/api/health").status_code == 200
+    assert client.post("/0x1log/api/logout").status_code == 200
+    assert client.get("/0x1log/api/health").status_code == 401
+    assert client.get("/0x1log/").status_code == 401
 
 
 def test_dashboard_pages_are_never_cached(client_and_collector):
     # A cached index served after logout reboots the app into an infinite
     # 401 -> navigate -> cache-hit reload loop. Regression test.
     client, _ = client_and_collector
-    authed = client.get("/nahiarhdlog/", params={"token": TOKEN})
+    authed = client.get("/0x1log/", params={"token": TOKEN})
     assert authed.status_code == 200
     assert authed.headers["cache-control"] == "no-store"
-    lock = client.get("/nahiarhdlog/")
+    lock = client.get("/0x1log/")
     assert lock.status_code == 401
     assert lock.headers["cache-control"] == "no-store"
-    js = client.get("/nahiarhdlog/static/app.js")
+    js = client.get("/0x1log/static/app.js")
     assert js.headers["cache-control"] == "no-store"
 
 
 def test_bearer_header_accepted(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/api/health", headers={"Authorization": f"Bearer {TOKEN}"})
+    r = client.get("/0x1log/api/health", headers={"Authorization": f"Bearer {TOKEN}"})
     assert r.status_code == 200
     assert r.json()["version"]
 
 
 def test_index_and_static_served(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/", params={"token": TOKEN})
+    r = client.get("/0x1log/", params={"token": TOKEN})
     assert r.status_code == 200
-    assert "<title>0x1LOG</title>" in r.text
+    assert "0x1LOG" in r.text
     assert 'rel="icon"' in r.text
     assert "static/favicon.svg" in r.text
     assert 'role="tablist"' in r.text
     assert 'role="tabpanel"' in r.text
     # Static assets are public (browsers can't token sub-resources); data is not.
-    js = client.get("/nahiarhdlog/static/app.js")
+    js = client.get("/0x1log/static/app.js")
     assert js.status_code == 200
     assert "javascript" in js.headers["content-type"]
     assert "displayMessage" in js.text
@@ -205,17 +191,17 @@ def test_index_and_static_served(client_and_collector):
     assert "bindChartHover" in js.text
     assert "methodChip" in js.text
     assert "logMsgHtml" in js.text
-    css = client.get("/nahiarhdlog/static/styles.css")
+    css = client.get("/0x1log/static/styles.css")
     assert css.status_code == 200
     assert "text/css" in css.headers["content-type"]
     assert "method-delete" in css.text
     assert "action-delete" in css.text
     assert "sev-mut" in css.text
-    ico = client.get("/nahiarhdlog/static/favicon.svg")
+    ico = client.get("/0x1log/static/favicon.svg")
     assert ico.status_code == 200
     assert "svg" in ico.headers["content-type"]
     assert b"<svg" in ico.content
-    lock = client.get("/nahiarhdlog/")
+    lock = client.get("/0x1log/")
     assert "static/favicon.svg" in lock.text
     assert "static/styles.css" in lock.text
     assert "nhl_theme" in lock.text
@@ -224,47 +210,47 @@ def test_index_and_static_served(client_and_collector):
 
 def test_static_traversal_blocked(client_and_collector):
     client, _ = client_and_collector
-    assert client.get("/nahiarhdlog/static/../router.py").status_code in (404, 400)
-    assert client.get("/nahiarhdlog/static/missing.js").status_code == 404
+    assert client.get("/0x1log/static/../router.py").status_code in (404, 400)
+    assert client.get("/0x1log/static/missing.js").status_code == 404
 
 
 def test_logs_api_filters_and_pagination(client_and_collector):
     client, _ = client_and_collector
     q = {"token": TOKEN}
-    all_rows = client.get("/nahiarhdlog/api/logs", params=q).json()
+    all_rows = client.get("/0x1log/api/logs", params=q).json()
     assert all_rows["total"] == 4
     assert len(all_rows["items"]) == 4
-    errors = client.get("/nahiarhdlog/api/logs", params={**q, "type": "error"}).json()
+    errors = client.get("/0x1log/api/logs", params={**q, "type": "error"}).json()
     assert errors["total"] == 2
     assert all(e["type"] == "error" for e in errors["items"])
-    info = client.get("/nahiarhdlog/api/logs", params={**q, "level": "INFO"}).json()
+    info = client.get("/0x1log/api/logs", params={**q, "level": "INFO"}).json()
     assert info["total"] == 1
-    text = client.get("/nahiarhdlog/api/logs", params={**q, "text": "hello"}).json()
+    text = client.get("/0x1log/api/logs", params={**q, "text": "hello"}).json()
     assert text["total"] == 1
     sig = client.get(
-        "/nahiarhdlog/api/logs", params={**q, "signature": "ValueError@x.py:9"}
+        "/0x1log/api/logs", params={**q, "signature": "ValueError@x.py:9"}
     ).json()
     assert sig["total"] == 2
-    traced = client.get("/nahiarhdlog/api/logs", params={**q, "trace_id": "t1"}).json()
+    traced = client.get("/0x1log/api/logs", params={**q, "trace_id": "t1"}).json()
     assert traced["total"] == 2
-    page = client.get("/nahiarhdlog/api/logs", params={**q, "limit": 2, "offset": 2}).json()
+    page = client.get("/0x1log/api/logs", params={**q, "limit": 2, "offset": 2}).json()
     assert page["total"] == 4 and len(page["items"]) == 2 and page["offset"] == 2
 
 
 def test_log_detail_and_404(client_and_collector):
     client, _ = client_and_collector
     q = {"token": TOKEN}
-    first = client.get("/nahiarhdlog/api/logs", params={**q, "limit": 1}).json()["items"][0]
-    detail = client.get(f"/nahiarhdlog/api/logs/{first['id']}", params=q)
+    first = client.get("/0x1log/api/logs", params={**q, "limit": 1}).json()["items"][0]
+    detail = client.get(f"/0x1log/api/logs/{first['id']}", params=q)
     assert detail.status_code == 200
     assert detail.json()["id"] == first["id"]
-    assert client.get("/nahiarhdlog/api/logs/999999", params=q).status_code == 404
+    assert client.get("/0x1log/api/logs/999999", params=q).status_code == 404
 
 
 def test_errors_top_trace_metrics_health(client_and_collector):
     client, _ = client_and_collector
     q = {"token": TOKEN}
-    top = client.get("/nahiarhdlog/api/errors/top", params=q).json()
+    top = client.get("/0x1log/api/errors/top", params=q).json()
     assert top == [
         {
             "signature": "ValueError@x.py:9",
@@ -273,17 +259,17 @@ def test_errors_top_trace_metrics_health(client_and_collector):
             "last_message": "ValueError: worse",
         }
     ]
-    trace = client.get("/nahiarhdlog/api/traces/t1", params=q).json()
+    trace = client.get("/0x1log/api/traces/t1", params=q).json()
     assert trace["trace_id"] == "t1"
     assert [e["type"] for e in trace["events"]] == ["log", "request"]
-    summary = client.get("/nahiarhdlog/api/metrics/summary", params=q).json()
+    summary = client.get("/0x1log/api/metrics/summary", params=q).json()
     assert summary["count"] == 1 and summary["errors"] == 0
     series = client.get(
-        "/nahiarhdlog/api/metrics/series", params={**q, "window": 3600, "buckets": 4}
+        "/0x1log/api/metrics/series", params={**q, "window": 3600, "buckets": 4}
     ).json()
     assert len(series) == 4
     assert sum(b["count"] for b in series) == 1
-    health = client.get("/nahiarhdlog/api/health", params=q).json()
+    health = client.get("/0x1log/api/health", params=q).json()
     assert {"version", "queued", "dropped", "fts_available", "retention_days"} <= set(health)
 
 
@@ -296,7 +282,7 @@ def test_custom_prefix(tmp_path):
         app.include_router(create_dashboard_router(collector, TOKEN), prefix="/ops")
         with TestClient(app) as client:
             assert client.get("/ops/api/health", params={"token": TOKEN}).status_code == 200
-            assert client.get("/nahiarhdlog/api/health", params={"token": TOKEN}).status_code == 404
+            assert client.get("/0x1log/api/health", params={"token": TOKEN}).status_code == 404
     finally:
         collector.stop()
 
@@ -316,7 +302,7 @@ def test_dashboard_js_has_stale_response_guards(client_and_collector):
     # Rapid clicks overlap requests in flight; a slow older response must
     # never overwrite newer state, and backend flips must surface.
     client, _ = client_and_collector
-    js = client.get("/nahiarhdlog/static/app.js").text
+    js = client.get("/0x1log/static/app.js").text
     assert "reqSeq" in js
     assert "lastInstance" in js
     assert "sticky sessions" in js
@@ -324,11 +310,11 @@ def test_dashboard_js_has_stale_response_guards(client_and_collector):
 
 def test_dashboard_static_has_enhanced_error_handling(client_and_collector):
     client, _ = client_and_collector
-    js = client.get("/nahiarhdlog/static/app.js")
+    js = client.get("/0x1log/static/app.js")
     assert "formatTraceback" in js.text
     assert "detail-error-card" in js.text
     assert "copy-section-btn" in js.text
-    css = client.get("/nahiarhdlog/static/styles.css")
+    css = client.get("/0x1log/static/styles.css")
     assert "detail-error-card" in css.text
     assert "traceback-block" in css.text
     assert "tb-frame" in css.text
@@ -354,11 +340,11 @@ def test_reads_see_just_emitted_events(client_and_collector):
             }
         )
     q = {"token": TOKEN}
-    top = client.get("/nahiarhdlog/api/errors/top", params=q).json()
+    top = client.get("/0x1log/api/errors/top", params=q).json()
     by_sig = {r["signature"]: r["count"] for r in top}
     assert by_sig["ValidationError@http.py:191"] == 4
     logs = client.get(
-        "/nahiarhdlog/api/logs",
+        "/0x1log/api/logs",
         params={**q, "type": "error", "signature": "ValidationError@http.py:191"},
     ).json()
     assert logs["total"] == 4
@@ -369,17 +355,17 @@ def test_api_json_is_never_cached(client_and_collector):
     # must never be stored, same as the pages.
     client, _ = client_and_collector
     q = {"token": TOKEN}
-    first_id = client.get("/nahiarhdlog/api/logs", params={**q, "limit": 1}).json()[
+    first_id = client.get("/0x1log/api/logs", params={**q, "limit": 1}).json()[
         "items"
     ][0]["id"]
     urls = [
-        "/nahiarhdlog/api/health",
-        "/nahiarhdlog/api/logs",
-        f"/nahiarhdlog/api/logs/{first_id}",
-        "/nahiarhdlog/api/errors/top",
-        "/nahiarhdlog/api/traces/t1",
-        "/nahiarhdlog/api/metrics/summary",
-        "/nahiarhdlog/api/metrics/series",
+        "/0x1log/api/health",
+        "/0x1log/api/logs",
+        f"/0x1log/api/logs/{first_id}",
+        "/0x1log/api/errors/top",
+        "/0x1log/api/traces/t1",
+        "/0x1log/api/metrics/summary",
+        "/0x1log/api/metrics/series",
     ]
     for url in urls:
         r = client.get(url, params=q)
@@ -391,7 +377,7 @@ def test_health_reports_backend_instance(client_and_collector):
     # With multiple replicas each backend has its own database; the footer
     # shows host/pid so round-robin flips are visible instead of mysterious.
     client, _ = client_and_collector
-    health = client.get("/nahiarhdlog/api/health", params={"token": TOKEN}).json()
+    health = client.get("/0x1log/api/health", params={"token": TOKEN}).json()
     assert health["instance"]["pid"] == os.getpid()
     assert health["instance"]["host"] == socket.gethostname()
 
@@ -430,7 +416,7 @@ def test_trace_endpoint_includes_summary(client_and_collector):
     )
     assert collector.flush()
 
-    res = client.get(f"/nahiarhdlog/api/traces/{tid}", params={"token": TOKEN})
+    res = client.get(f"/0x1log/api/traces/{tid}", params={"token": TOKEN})
     assert res.status_code == 200
     body = res.json()
     assert body["trace_id"] == tid
@@ -449,26 +435,26 @@ def test_trace_endpoint_includes_summary(client_and_collector):
 def test_non_ascii_token_is_rejected_not_a_crash(client_and_collector):
     # Regression: hmac.compare_digest raised TypeError on non-ASCII str (500).
     client, _ = client_and_collector
-    assert client.get("/nahiarhdlog/api/health", params={"token": "é"}).status_code == 403
-    assert client.get("/nahiarhdlog/", params={"token": "é"}).status_code == 401
-    assert client.post("/nahiarhdlog/api/login", json={"token": "é"}).status_code == 403
+    assert client.get("/0x1log/api/health", params={"token": "é"}).status_code == 403
+    assert client.get("/0x1log/", params={"token": "é"}).status_code == 401
+    assert client.post("/0x1log/api/login", json={"token": "é"}).status_code == 403
 
 
 def test_login_cookie_is_scoped_to_the_dashboard(client_and_collector):
     client, _ = client_and_collector
-    r = client.post("/nahiarhdlog/api/login", json={"token": TOKEN})
+    r = client.post("/0x1log/api/login", json={"token": TOKEN})
     cookie = r.headers["set-cookie"]
-    assert "Path=/nahiarhdlog" in cookie
+    assert "Path=/0x1log" in cookie
     assert "HttpOnly" in cookie
-    out = client.post("/nahiarhdlog/api/logout")
+    out = client.post("/0x1log/api/logout")
     cleared = out.headers.get_list("set-cookie")
-    assert any("Path=/nahiarhdlog" in c for c in cleared)
+    assert any("Path=/0x1log" in c for c in cleared)
     assert any("Path=/;" in c or c.endswith("Path=/") for c in cleared)
 
 
 def test_combined_metrics_endpoint(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/api/metrics", params={"token": TOKEN, "window": 3600, "buckets": 30})
+    r = client.get("/0x1log/api/metrics", params={"token": TOKEN, "window": 3600, "buckets": 30})
     assert r.status_code == 200
     assert r.headers["cache-control"] == "no-store"
     body = r.json()
@@ -479,7 +465,7 @@ def test_combined_metrics_endpoint(client_and_collector):
 def test_dashboard_js_keeps_token_out_of_urls(client_and_collector):
     # Query strings land in server access logs; the token must ride a header.
     client, _ = client_and_collector
-    js = client.get("/nahiarhdlog/static/app.js").text
+    js = client.get("/0x1log/static/app.js").text
     assert "Authorization" in js
     assert "all.token" not in js
 
@@ -487,7 +473,7 @@ def test_dashboard_js_keeps_token_out_of_urls(client_and_collector):
 def test_logs_histogram_endpoint(client_and_collector):
     client, _ = client_and_collector
     r = client.get(
-        "/nahiarhdlog/api/logs/histogram",
+        "/0x1log/api/logs/histogram",
         params={"token": TOKEN, "buckets": 12, "since": time.time() - 3600},
     )
     assert r.status_code == 200
@@ -496,12 +482,12 @@ def test_logs_histogram_endpoint(client_and_collector):
     assert body["supported"] is True
     assert len(body["buckets"]) == 12
     assert sum(b["total"] for b in body["buckets"]) >= 1
-    assert client.get("/nahiarhdlog/api/logs/histogram").status_code == 401
+    assert client.get("/0x1log/api/logs/histogram").status_code == 401
 
 
 def test_fonts_are_served_and_cacheable(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/nahiarhdlog/static/overpass.woff2")
+    r = client.get("/0x1log/static/overpass.woff2")
     assert r.status_code == 200
     assert r.headers["content-type"] == "font/woff2"
     assert "max-age" in r.headers["cache-control"]

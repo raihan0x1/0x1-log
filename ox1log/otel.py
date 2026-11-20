@@ -33,7 +33,7 @@ def export_trace(
     if not events:
         return 0
     tid = trace_id or events[0].get("trace_id")
-    tracer = tracer or trace.get_tracer("nahiarhdlog")
+    tracer = tracer or trace.get_tracer("0x1log")
     parent_ctx = None
     if tid:
         try:
@@ -69,27 +69,27 @@ def export_trace(
             name = f"log:{(event.get('message') or '')[:60]}"
         span = tracer.start_span(name, context=parent_ctx, start_time=start_ns)
         try:
-            span.set_attribute("nahiarhdlog.type", etype)
+            span.set_attribute("ox1log.type", etype)
             if event.get("level"):
-                span.set_attribute("nahiarhdlog.level", event["level"])
+                span.set_attribute("ox1log.level", event["level"])
             if event.get("trace_id"):
-                span.set_attribute("nahiarhdlog.trace_id", event["trace_id"])
+                span.set_attribute("ox1log.trace_id", event["trace_id"])
             if data.get("method") is not None:
                 span.set_attribute("http.method", data["method"])
             if data.get("status") is not None:
                 span.set_attribute("http.status_code", data["status"])
             for key in ("path", "query", "duration_ms"):
                 if data.get(key) is not None:
-                    span.set_attribute(f"nahiarhdlog.{key}", data[key])
+                    span.set_attribute(f"ox1log.{key}", data[key])
             for key in ("exc_type", "signature", "logger"):
                 if data.get(key) is not None:
-                    span.set_attribute(f"nahiarhdlog.{key}", data[key])
+                    span.set_attribute(f"ox1log.{key}", data[key])
             for key in ("span_type", "span_id", "parent_span_id", "model"):
                 if data.get(key) is not None:
-                    span.set_attribute(f"nahiarhdlog.{key}", str(data[key]))
+                    span.set_attribute(f"ox1log.{key}", str(data[key]))
             for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
                 if isinstance(data.get(key), int):
-                    span.set_attribute(f"nahiarhdlog.{key}", data[key])
+                    span.set_attribute(f"ox1log.{key}", data[key])
             if etype == "error" or (etype == "span" and data.get("status") == "error"):
                 span.set_status(
                     trace.Status(

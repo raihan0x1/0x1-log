@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - exercised via monkeypatched global
     psycopg = None  # type: ignore[assignment]
     dict_row = None  # type: ignore[assignment]
 
-_TABLE = "nahiarhdlog_events"
+_TABLE = "ox1log_events"
 _MAX_LIMIT = 1000
 
 _SCHEMA_STATEMENTS = (
@@ -113,6 +113,7 @@ class PostgresStorage:
 
     # Every replica reads and writes the same table.
     shared = True
+    storage_kind = "postgres"
 
     def __init__(self, dsn: str, retention_days: int = 7, timeout: float = 15.0) -> None:
         _require_driver()
@@ -226,6 +227,8 @@ class PostgresStorage:
         signature: str | None,
         since: float | None,
         until: float | None,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -245,6 +248,12 @@ class PostgresStorage:
         if signature:
             clauses.append("(e.data ->> 'signature') = %s")
             params.append(signature)
+        if source:
+            clauses.append("(e.data ->> 'source') = %s")
+            params.append(source)
+        if after_id is not None:
+            clauses.append("e.id > %s")
+            params.append(int(after_id))
         if since is not None:
             clauses.append("e.ts >= %s")
             params.append(since)
@@ -253,6 +262,14 @@ class PostgresStorage:
             params.append(until)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         return where, params
+
+    def sources(self) -> list[str]:
+        sql = (
+            f"SELECT DISTINCT (data ->> 'source') AS src FROM {_TABLE}"
+            " WHERE (data ->> 'source') IS NOT NULL ORDER BY src"
+        )
+        rows = self._run(lambda conn: conn.execute(sql).fetchall())
+        return [str(r["src"]) for r in rows if r["src"]]
 
     def search(
         self,
@@ -265,16 +282,18 @@ class PostgresStorage:
         until: float | None = None,
         limit: int = 100,
         offset: int = 0,
+        *,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), _MAX_LIMIT))
         offset = max(0, int(offset))
+        order = "ORDER BY e.id ASC" if after_id is not None else "ORDER BY e.ts DESC, e.id DESC"
         where, params = self._filters(
-            text, level, event_type, trace_id, signature, since, until
+            text, level, event_type, trace_id, signature, since, until,
+            source=source, after_id=after_id,
         )
-        sql = (
-            f"SELECT e.* FROM {_TABLE} e {where}"
-            " ORDER BY e.ts DESC, e.id DESC LIMIT %s OFFSET %s"
-        )
+        sql = f"SELECT e.* FROM {_TABLE} e {where} {order} LIMIT %s OFFSET %s"
         rows = self._run(
             lambda conn: conn.execute(sql, (*params, limit, offset)).fetchall()
         )
@@ -289,9 +308,13 @@ class PostgresStorage:
         signature: str | None = None,
         since: float | None = None,
         until: float | None = None,
+        *,
+        source: str | None = None,
+        after_id: int | None = None,
     ) -> int:
         where, params = self._filters(
-            text, level, event_type, trace_id, signature, since, until
+            text, level, event_type, trace_id, signature, since, until,
+            source=source, after_id=after_id,
         )
         sql = f"SELECT COUNT(*) AS n FROM {_TABLE} e {where}"
         row = self._run(lambda conn: conn.execute(sql, params).fetchone())

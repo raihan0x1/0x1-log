@@ -102,17 +102,17 @@ def test_skip_prefixes_passthrough_without_logging(tmp_path):
     def ping():
         return {"ok": True}
 
-    @app.get("/nahiarhdlog/api/health")
+    @app.get("/0x1log/api/health")
     def health():
         return {"ok": True}
 
     app.add_middleware(
-        LoggingMiddleware, collector=collector, skip_prefixes=("/nahiarhdlog",)
+        LoggingMiddleware, collector=collector, skip_prefixes=("/0x1log",)
     )
     try:
         with TestClient(app) as client:
             assert client.get("/ping").status_code == 200
-            assert client.get("/nahiarhdlog/api/health").status_code == 200
+            assert client.get("/0x1log/api/health").status_code == 200
         assert collector.flush()
         rows = collector.storage.search(event_type="request")
         assert [r["data"]["path"] for r in rows] == ["/ping"]

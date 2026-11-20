@@ -291,6 +291,9 @@ class AISpan(Span):
             data["tools"] = self.tools
         if self.completion is not None:
             data["completion"] = self.completion
+            # set_completion also fills output; storing both doubled every LLM event.
+            if self.output_data is self.completion:
+                data.pop("output", None)
         if self.prompt_tokens is not None:
             data["prompt_tokens"] = self.prompt_tokens
         if self.completion_tokens is not None:

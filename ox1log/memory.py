@@ -8,6 +8,7 @@ logs. Events live for the lifetime of the process.
 from __future__ import annotations
 
 from collections import deque
+import json
 import threading
 import time
 from typing import Any, Iterable
@@ -17,6 +18,10 @@ from .grouping import truncate_message
 _MAX_LIMIT = 1000
 DEFAULT_MAX_EVENTS = 5000
 DEFAULT_MAX_MESSAGE_CHARS = 8192
+# Ring buffers keep whole events and every dashboard read parses them all: 1,090 spans
+# holding whole vector-search bodies (up to 632 KB) made one 5,000-event Redis list 581 MB
+# and each read took 5-19 s (2026-11-20).
+MAX_DATA_VALUE_CHARS = 16_384
 _DEFAULT_SOURCE = "default"
 
 
@@ -29,6 +34,19 @@ def event_source(event: dict[str, Any]) -> str:
     return _DEFAULT_SOURCE
 
 
+def _cap_value(value: Any) -> Any:
+    """Keep one data value under MAX_DATA_VALUE_CHARS, as a truncated JSON string if needed."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+    except ValueError:  # circular structure: leave it to the storage as before
+        return value
+    if len(text) <= MAX_DATA_VALUE_CHARS:
+        return value
+    return truncate_message(text, MAX_DATA_VALUE_CHARS)
+
+
 def normalize_event(
     event: dict[str, Any], event_id: int, max_message_chars: int
 ) -> dict[str, Any]:
@@ -37,7 +55,11 @@ def normalize_event(
     if max_message_chars > 0 and len(text) > max_message_chars:
         text = truncate_message(text, max_message_chars)
     raw_data = event.get("data")
-    data = dict(raw_data) if isinstance(raw_data, dict) else {}
+    data = (
+        {key: _cap_value(value) for key, value in raw_data.items()}
+        if isinstance(raw_data, dict)
+        else {}
+    )
     return {
         "id": event_id,
         "ts": float(event.get("ts") or time.time()),

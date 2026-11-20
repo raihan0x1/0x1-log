@@ -321,6 +321,17 @@ uv run --no-sync python -m pytest
 uv run --no-sync python scripts/probe_perf.py --n 10000
 ```
 
+### Releasing
+
+Write the notes under `## [Unreleased]` in `CHANGELOG.md`, then:
+
+```bash
+make release-version            # patch; or BUMP=minor, BUMP=major, BUMP=1.4.0
+git commit -am "chore(release): v1.3.2" && git push origin main
+```
+
+`release-version` bumps `pyproject.toml`, `ox1log.__version__` and the CHANGELOG heading. On a push to `main`, `.github/workflows/publish.yml` tests, builds and publishes any version not yet on PyPI, then tags it and creates the GitHub release. Pushes without a bump publish nothing. The `pypi` environment accepts deployments only from `main`, so there is no manual approval.
+
 ## Changelog
 
 - **0.9.1** — Adopt the 0x1LOG brand in the README and dashboard. Existing installations use the same Python imports, dashboard URL, and SQLite path.

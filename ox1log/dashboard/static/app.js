@@ -21,6 +21,7 @@
     return {
       text: "", level: "", type: "", signature: "", range: 0, custom: null,
       offset: 0, limit: 50, live: !!live,
+      pages: [], expanded: {},
     };
   }
 
@@ -162,7 +163,7 @@
   /* Lines: every event kind rides its own colour. */
   var SPAN_LINES = {
     llm: "llm", agent: "agent", tool: "tool", embedding: "embedding", embed: "embedding",
-    db: "db", sql: "db", cache: "cache", redis: "cache", http: "http", service: "http", auth: "auth",
+    db: "db", sql: "db", cache: "cache", redis: "cache", http: "http", service: "http", auth: "auth", job: "job",
   };
   function lineOf(e) {
     if (e.type === "request") return "request";
@@ -515,14 +516,51 @@
     if (e.type === "span") return spanMsgHtml(e);
     return logMsgHtml(e);
   }
-  function logRowHtml(e) {
+  function repeatName(e) {
+    var d = e.data || {};
+    if (e.type === "span") return d.name || displayMessage(e);
+    if (e.type === "request") return (d.method || "") + " " + (d.path || "");
+    return displayMessage(e);
+  }
+  function repeatMsgHtml(e) {
+    var r = e.repeat;
+    var parts = ["<span class='rep-toggle' aria-hidden='true'>" + (e.events ? "\u25BE" : "\u25B8") + "</span>",
+      "<span class='name'>" + esc(repeatName(e)) + "</span>",
+      "<span class='rep-count'>\u00D7" + esc(fmtNum(r.count)) + "</span>"];
+    if (r.duration_min_ms != null) {
+      var lo = fmtDur(r.duration_min_ms), hi = fmtDur(r.duration_max_ms);
+      parts.push("<span class='dur'>" + esc(lo === hi ? lo : lo + " to " + hi) + "</span>");
+    }
+    if (r.total_tokens) parts.push("<span class='dur'>" + esc(fmtNum(r.total_tokens)) + " tokens</span>");
+    if (r.traces > 1) parts.push("<span class='dur'>from " + esc(fmtNum(r.traces)) + " traces</span>");
+    return parts.join("");
+  }
+  function logRowsHtml(e) {
+    if (!e.repeat) return logRowHtml(e);
+    var r = e.repeat;
+    var open = !!e.events;
+    var traceCell = r.traces === 1 && e.trace_id
+      ? "<button type='button' class='trace-id' data-trace='" + esc(e.trace_id) + "' title='Open trace " + esc(e.trace_id) +
+        "'>" + esc(e.trace_id) + "</button>"
+      : "";
+    var head = "<tr data-repeat='" + r.first_id + "' tabindex='0' aria-expanded='" + open + "' class='" +
+      (rowClass(e) + " repeat-head").trim() + "' title='" + esc(fmtNum(r.count) + " events from " + fmtTime(r.first_ts) +
+      " to " + fmtTime(r.last_ts) + (open ? ". Click to fold." : ". Click to show each one.")) + "'>" +
+      "<td class='time'>" + esc(fmtTimeShort(r.last_ts)) + "</td>" +
+      "<td class='line'>" + stationHtml(e) + "</td>" +
+      "<td class='level'>" + (e.level ? chip(e.level) : "") + "</td>" +
+      "<td class='msg'>" + repeatMsgHtml(e) + "</td>" +
+      "<td class='trace'>" + traceCell + "</td></tr>";
+    return head + (open ? e.events.map(function (c) { return logRowHtml(c, "repeat-child"); }).join("") : "");
+  }
+  function logRowHtml(e, extraClass) {
     var traceCell = e.trace_id
       ? "<button type='button' class='trace-id' data-trace='" + esc(e.trace_id) + "' title='Open trace " + esc(e.trace_id) +
         "'>" + esc(e.trace_id) + "</button>" +
         "<button type='button' class='copy-btn' data-copy='" + esc(e.trace_id) +
         "' aria-label='Copy trace id' title='Copy trace id' tabindex='-1'>" + ICON.copy + "</button>"
       : "";
-    var cls = rowClass(e) + (String(e.id) === String(state.selectedId) ? " selected" : "");
+    var cls = rowClass(e) + (extraClass ? " " + extraClass : "") + (String(e.id) === String(state.selectedId) ? " selected" : "");
     return "<tr data-id='" + e.id + "' tabindex='0' class='" + cls.trim() + "'>" +
       "<td class='time' title='" + esc(fmtTime(e.ts)) + "'>" + esc(fmtTimeShort(e.ts)) + "</td>" +
       "<td class='line'>" + stationHtml(e) + "</td>" +
@@ -554,7 +592,10 @@
   function loadLogs(opts) {
     var silent = !!(opts && opts.silent);
     var f = state.logs;
-    var params = Object.assign(logParams(), { limit: f.limit, offset: f.offset });
+    if (!f.offset) f.pages = [];
+    var params = Object.assign(logParams(), {
+      limit: f.limit, offset: f.offset, repeats: 1, expand: Object.keys(f.expanded).join(","),
+    });
     var my = ++reqSeq.logs;
     hideBanner("error");
     renderChips();
@@ -563,22 +604,27 @@
     var volume = loadVolume();
     var rows = api("/logs", params).then(function (res) {
       if (my !== reqSeq.logs) return;
-      var ids = res.items.map(function (e) { return String(e.id); }).join(",");
+      // A Repeat's newest id and count change as live tail folds new events in.
+      var ids = res.items.map(function (e) {
+        return e.id + (e.repeat ? "x" + e.repeat.count + (e.events ? "o" : "") : "");
+      }).join(",");
       if (silent && body.getAttribute("data-ids") === ids) {
         renderLogsMeta(res);
         return;
       }
       var active = document.activeElement;
-      var focusId = active && active.getAttribute && active.getAttribute("data-id");
+      var focusSel = active && active.getAttribute && (active.getAttribute("data-repeat")
+        ? "tr[data-repeat='" + active.getAttribute("data-repeat") + "']"
+        : active.getAttribute("data-id") ? "tr[data-id='" + active.getAttribute("data-id") + "']" : null);
       body.innerHTML = res.items.length
-        ? res.items.map(logRowHtml).join("")
+        ? res.items.map(logRowsHtml).join("")
         : "<tr class='empty-row'><td colspan='5'>" + emptyState("No events match these filters",
             f.text || f.level || f.type || f.signature || f.range || f.custom
               ? "Widen the time range or clear a filter."
               : "Events appear here as soon as the app logs, serves a request, or records a span.") + "</td></tr>";
       body.setAttribute("data-ids", ids);
-      if (silent && focusId) {
-        var el = body.querySelector("tr[data-id='" + focusId + "']");
+      if (silent && focusSel) {
+        var el = body.querySelector(focusSel);
         if (el) el.focus({ preventScroll: true });
       }
       renderLogsMeta(res);
@@ -589,13 +635,15 @@
     return Promise.all([volume, rows]);
   }
   function renderLogsMeta(res) {
+    // Offsets count events while a page holds `limit` rows, so pages are walked, not numbered out of a total.
+    var shown = res.items.reduce(function (n, e) { return n + (e.repeat ? e.repeat.count : 1); }, 0);
     var start = res.total === 0 ? 0 : res.offset + 1;
     $("logs-meta").innerHTML = "<strong>" + fmtNum(res.total) + "</strong> " + (res.total === 1 ? "event" : "events") +
-      (res.total ? ", showing " + fmtNum(start) + " to " + fmtNum(res.offset + res.items.length) : "");
-    var pages = Math.max(1, Math.ceil(res.total / res.limit));
-    $("page-info").textContent = "Page " + fmtNum(Math.floor(res.offset / res.limit) + 1) + " of " + fmtNum(pages);
+      (res.total ? ", showing " + fmtNum(start) + " to " + fmtNum(res.offset + shown) : "");
+    $("page-info").textContent = "Page " + fmtNum(state.logs.pages.length + 1);
     $("page-prev").disabled = res.offset <= 0;
-    $("page-next").disabled = res.offset + res.items.length >= res.total;
+    $("page-next").disabled = res.next_offset == null;
+    state.logs.nextOffset = res.next_offset;
   }
 
   /* Event volume: the line's traffic over the selected range. */
@@ -711,13 +759,15 @@
     loadLogs();
   });
   $("page-prev").addEventListener("click", function () {
-    state.logs.offset = Math.max(0, state.logs.offset - state.logs.limit);
+    state.logs.offset = state.logs.pages.pop() || 0;
     if (state.logs.offset === 0 && !state.logs.custom && readLocal("nhl_live") !== "0") setLive(true);
     else loadLogs();
   });
   $("page-next").addEventListener("click", function () {
+    if (state.logs.nextOffset == null) return;
     setLive(false, { quiet: true });
-    state.logs.offset += state.logs.limit;
+    state.logs.pages.push(state.logs.offset);
+    state.logs.offset = state.logs.nextOffset;
     loadLogs();
   });
   function setLive(on, opts) {
@@ -755,14 +805,22 @@
       openTrace(traceBtn.getAttribute("data-trace"));
       return;
     }
+    var head = e.target.closest("tr[data-repeat]");
+    if (head) { toggleRepeat(head.getAttribute("data-repeat")); return; }
     var row = e.target.closest("tr[data-id]");
     if (row) openDetail(row.getAttribute("data-id"));
   });
+  function toggleRepeat(firstId) {
+    var open = state.logs.expanded;
+    if (open[firstId]) delete open[firstId];
+    else open[firstId] = true;
+    loadLogs({ silent: true });
+  }
 
   /* Keyboard: "/" searches, j/k walk the current list, Enter opens, Esc closes. */
   function currentRows() {
     var root = state.view === "trace" ? $("trace-list") : state.view === "logs" ? $("logs-body") : null;
-    return root ? Array.prototype.slice.call(root.querySelectorAll("[data-id]")) : [];
+    return root ? Array.prototype.slice.call(root.querySelectorAll("[data-id], [data-repeat]")) : [];
   }
   document.addEventListener("keydown", function (e) {
     var t = e.target;
@@ -789,7 +847,12 @@
       e.preventDefault();
       rows[next].focus();
       rows[next].scrollIntoView({ block: "nearest" });
-      if (isInspectorOpen()) openDetail(rows[next].getAttribute("data-id"));
+      if (isInspectorOpen() && rows[next].hasAttribute("data-id")) openDetail(rows[next].getAttribute("data-id"));
+      return;
+    }
+    if ((e.key === "Enter" || e.key === " ") && t && t.matches && t.matches("tr[data-repeat]")) {
+      e.preventDefault();
+      toggleRepeat(t.getAttribute("data-repeat"));
       return;
     }
     if ((e.key === "Enter" || e.key === " ") && t && t.matches && t.matches("tr[data-id], .wf-row[data-id]")) {

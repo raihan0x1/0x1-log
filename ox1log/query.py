@@ -6,7 +6,7 @@ This is the API the dashboard (and user code) reads through.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .memory import MemoryStorage
@@ -87,6 +87,86 @@ def count_logs(storage: StorageLike, filt: LogFilter) -> int:
         until=f.until,
         **extra,
     )
+
+
+REPEAT_MAX = 1000
+_FOLD_BATCH_MAX = 1000
+
+
+def repeat_key(event: dict[str, Any]) -> tuple[Any, ...]:
+    """What makes consecutive events one Repeat: type, name, level, status."""
+    d = event.get("data") or {}
+    kind = event.get("type")
+    if kind == "span":
+        name = d.get("name")
+    elif kind == "request":
+        name = f"{d.get('method')} {d.get('path')}"
+    else:
+        name = event.get("message")
+    return (kind, name, event.get("level"), d.get("status"))
+
+
+def _repeat_summary(members: list[dict[str, Any]], offset: int) -> dict[str, Any]:
+    durations = [
+        float(m["data"]["duration_ms"])
+        for m in members
+        if (m.get("data") or {}).get("duration_ms") is not None
+    ]
+    tokens = sum(int((m.get("data") or {}).get("total_tokens") or 0) for m in members)
+    return {
+        "count": len(members),
+        "offset": offset,
+        "first_id": members[-1]["id"],
+        "first_ts": members[-1]["ts"],
+        "last_ts": members[0]["ts"],
+        "duration_min_ms": min(durations) if durations else None,
+        "duration_max_ms": max(durations) if durations else None,
+        "total_tokens": tokens or None,
+        "traces": len({m["trace_id"] for m in members if m.get("trace_id")}),
+    }
+
+
+def fold_logs(
+    storage: StorageLike, filt: LogFilter, expand: frozenset[int] = frozenset()
+) -> dict[str, Any]:
+    """One page of `limit` rows, newest first, where consecutive events with the
+    same `repeat_key` fold into one Repeat (at most REPEAT_MAX events each).
+
+    `offset` counts events, not rows; `next_offset` is where the next page starts
+    (None on the last page). A Repeat row is its newest event plus a `repeat`
+    summary; its events ride along as `events` only when its `first_id` is in
+    `expand`.
+    """
+    f = filt.normalized()
+    runs: list[tuple[int, list[dict[str, Any]]]] = []
+    pos = f.offset
+    next_offset: int | None = None
+    # Most pages fold little, so read about two pages first and grow only for long Repeats.
+    size = min(f.limit * 2, _FOLD_BATCH_MAX)
+    while next_offset is None:
+        batch = search_logs(storage, replace(f, limit=size, offset=pos, after_id=None))
+        for event in batch:
+            last = runs[-1][1] if runs else None
+            if last and len(last) < REPEAT_MAX and repeat_key(last[0]) == repeat_key(event):
+                last.append(event)
+            elif len(runs) == f.limit:
+                next_offset = pos
+                break
+            else:
+                runs.append((pos, [event]))
+            pos += 1
+        if len(batch) < size:
+            break
+        size = min(size * 2, _FOLD_BATCH_MAX)
+    items = []
+    for start, members in runs:
+        row = dict(members[0])
+        if len(members) > 1:
+            row["repeat"] = _repeat_summary(members, start)
+            if row["repeat"]["first_id"] in expand:
+                row["events"] = members
+        items.append(row)
+    return {"items": items, "offset": f.offset, "next_offset": next_offset}
 
 
 def list_sources(storage: Any) -> list[str]:

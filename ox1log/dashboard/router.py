@@ -22,6 +22,7 @@ from ..metrics import overview, request_stats, timeseries
 from ..query import (
     LogFilter,
     count_logs,
+    fold_logs,
     get_event,
     get_trace,
     list_sources,
@@ -226,6 +227,8 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
         until: float | None = None,
         limit: int = 100,
         offset: int = 0,
+        repeats: bool = False,
+        expand: str | None = None,
     ) -> dict[str, Any]:
         # Wait for the backlog queued at call time so just-emitted events
         # are visible on the first click instead of the third.
@@ -243,6 +246,11 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
             limit=limit,
             offset=offset,
         ).normalized()
+        if repeats:
+            # Comma list of Repeat first_ids whose events the table shows inline.
+            opened = frozenset(int(x) for x in (expand or "").split(",") if x.strip().isdigit())
+            page = fold_logs(collector.storage, filt, opened)
+            return {**page, "total": count_logs(collector.storage, filt), "limit": filt.limit}
         return {
             "items": search_logs(collector.storage, filt),
             "total": count_logs(collector.storage, filt),

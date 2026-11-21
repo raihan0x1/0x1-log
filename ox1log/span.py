@@ -142,11 +142,12 @@ class Span:
 
         active_trace = self._explicit_trace_id or current_trace_id.get()
         if not active_trace:
-            self.trace_id = new_trace_id()
-            self._trace_token = current_trace_id.set(self.trace_id)
+            active_trace = new_trace_id()
             self._is_trace_root = True
-        else:
-            self.trace_id = active_trace
+        self.trace_id = active_trace
+        # An explicit trace (a job continuing its enqueuer's trace) must reach nested spans and logs too.
+        if active_trace != current_trace_id.get():
+            self._trace_token = current_trace_id.set(active_trace)
 
         self.parent_span_id = (
             self._explicit_parent_span_id or current_span_id.get()

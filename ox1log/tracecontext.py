@@ -67,3 +67,11 @@ def new_span_id() -> str:
 
 def format_traceparent(trace_id: str, parent_id: str, flags: str = "01") -> str:
     return f"00-{trace_id}-{parent_id}-{flags}"
+
+
+def current_traceparent() -> str | None:
+    """The active trace as a W3C traceparent, for handing to queued work."""
+    trace_id, span_id = current_trace_id.get(), current_span_id.get()
+    if not trace_id:
+        return None
+    return format_traceparent(trace_id, span_id or new_span_id())

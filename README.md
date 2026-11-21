@@ -119,6 +119,8 @@ from ox1log.integrations.rq import JobTraceMixin, trace_meta
 
 class Worker(JobTraceMixin, rq.Worker): ...
 queue.enqueue(process_batch, batch_id, meta=trace_meta())
+# an outbox dispatcher enqueueing a generic runner can name the real work:
+# meta=trace_meta(name="reports.monthly")
 
 # Celery: once, in the worker and in the process that sends tasks
 from ox1log.integrations.celery import trace_tasks

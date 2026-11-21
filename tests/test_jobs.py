@@ -68,6 +68,14 @@ def test_rq_job_without_trace_is_its_own_root_and_marks_failure(collector):
     assert rows["vectors/search"]["trace_id"] == rows["tasks.top_issues"]["trace_id"]
 
 
+def test_rq_job_span_takes_the_name_from_meta(collector):
+    meta = trace_meta(name="top_issues.analyze")
+
+    _Worker().perform_job(_job(meta), SimpleNamespace(name="default"))
+
+    assert "top_issues.analyze" in _spans(collector)
+
+
 def test_celery_task_continues_the_sending_trace(collector):
     celery = pytest.importorskip("celery")
     from celery.contrib.testing.worker import start_worker

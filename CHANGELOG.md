@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Repeats in the log table.** Consecutive events with the same type, name, level and status fold into one row (`api/v1/vectors/search ×49 · 1.95 s to 2.03 s`) that opens in place to show each event; at most 1,000 events per Repeat. `GET /0x1log/api/logs?repeats=true` serves folded rows (`repeat` summary, `next_offset` cursor, `expand=<first_id,...>` for opened Repeats); without `repeats` the endpoint is unchanged.
-- **One trace per background job.** `ox1log.integrations.rq` (`JobTraceMixin` for the Worker, `trace_meta()` for `enqueue(meta=...)`) and `ox1log.integrations.celery` (`trace_tasks()`) wrap each job in a `job` span that continues the trace of the request that queued it, so a job's spans and logs share one trace id. Other runners: `ox1log.integrations.job_span(name, traceparent)`.
+- **One trace per background job.** `ox1log.integrations.rq` (`JobTraceMixin` for the Worker, `trace_meta(name=...)` for `enqueue(meta=...)`) and `ox1log.integrations.celery` (`trace_tasks()`) wrap each job in a `job` span that continues the trace of the request that queued it, so a job's spans and logs share one trace id. Other runners: `ox1log.integrations.job_span(name, traceparent)`.
 - `job` spans ride their own line colour in the dashboard.
 
 ### Changed

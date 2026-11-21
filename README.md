@@ -109,6 +109,27 @@ collector = attach()
 logger.add(LogHandler(collector), format="{message}")
 ```
 
+### Optional: one trace per background job
+
+Wrap each job in a `job` span that continues the trace of the request that queued it, so the dashboard shows a request, its job, and every call the job made as one trace:
+
+```python
+# RQ (1.16+): mix into your Worker class, and carry the trace when enqueueing
+from ox1log.integrations.rq import JobTraceMixin, trace_meta
+
+class Worker(JobTraceMixin, rq.Worker): ...
+queue.enqueue(process_batch, batch_id, meta=trace_meta())
+
+# Celery: once, in the worker and in the process that sends tasks
+from ox1log.integrations.celery import trace_tasks
+trace_tasks()
+
+# Anything else (arq, cron, scripts): pass a traceparent if you have one
+from ox1log.integrations import job_span
+with job_span("nightly_report", traceparent):
+    run_report()
+```
+
 ### Upgrade an existing app
 
 Replace the old `nahiarhdlog` dependency with `0x1-log>=1.3` and update imports from `nahiarhdLOG` to `ox1log`, including submodules. Legacy `/nahiarhdlog` and `.nahiarhdlog/` fallbacks were removed in `1.3.0`; new cookies use `ox1log_token` and Postgres tables use `ox1log_events`.
@@ -117,7 +138,7 @@ Replace the old `nahiarhdlog` dependency with `0x1-log>=1.3` and update imports 
 
 | Area | What you get |
 | ---- | ------------ |
-| Logs | Auto-captured stdlib records + requests; full-text search (FTS5) with prefix matching, level/type/time/trace filters, an event-volume histogram you can click to narrow the range, pagination |
+| Logs | Auto-captured stdlib records + requests; full-text search (FTS5) with prefix matching, level/type/time/trace filters, an event-volume histogram you can click to narrow the range, repeated events folded into one row you can open, pagination |
 | Errors | Grouped by `ExcType@file.py:line`, full tracebacks, top-errors ranking |
 | Alerts | Threshold rules (N events in M seconds) + cooldown; webhook, Telegram, and SMTP sinks |
 | Metrics | RPS, error rate, latency p50/p95, time-bucketed series — computed from the same request events |

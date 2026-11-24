@@ -529,6 +529,10 @@ def test_a_running_read_does_not_hold_up_writes(storage):
     assert storage.count(text="w") == 1
 
 
+@pytest.mark.skipif(
+    sqlite3.sqlite_version_info < (3, 48, 0),
+    reason="SQLite < 3.48 won't treat an expression index as covering",
+)
 def test_metrics_read_the_index_alone(storage):
     # fetch_requests' expressions must match idx_events_type_ts exactly, or
     # every metrics poll decodes each request's JSON again.

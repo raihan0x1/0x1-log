@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-24
+
+### Added
+- Console redesign and infinite scroll
+- Page the log table by cursor
+
+### Fixed
+- Index the dashboard's hot queries and read on a separate connection
+
+### Changed
+- Add .gitignore and salt files
+
 ## [1.4.0] - 2026-11-21
 
 ### Added

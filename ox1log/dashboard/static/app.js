@@ -601,7 +601,6 @@
     renderChips();
     var body = $("logs-body");
     if (!silent) body.innerHTML = "<tr class='empty-row'><td colspan='5'><p class='meta loading'>Loading events</p></td></tr>";
-    var volume = loadVolume();
     var rows = api("/logs", params).then(function (res) {
       if (my !== reqSeq.logs) return;
       // A Repeat's newest id and count change as live tail folds new events in.
@@ -632,6 +631,12 @@
       if (my !== reqSeq.logs) return;
       if (err.message !== "unauthorized") showBanner("Could not load events: " + err.message + ". Retry with Search.");
     });
+    // Rows first: storage answers one query at a time, so the table must not
+    // queue behind the histogram, which scans the whole range. Live tail only
+    // moves its last bar, so redraw it at most every 10 s.
+    var volume = rows.then(function () {
+      if (!silent || Date.now() - volumeAt >= 10000) return loadVolume();
+    });
     return Promise.all([volume, rows]);
   }
   function renderLogsMeta(res) {
@@ -648,8 +653,10 @@
 
   /* Event volume: the line's traffic over the selected range. */
   var lastVolume = null;
+  var volumeAt = 0;
   function loadVolume() {
     var my = ++reqSeq.volume;
+    volumeAt = Date.now();
     var buckets = window.innerWidth < 760 ? 36 : 90;
     return api("/logs/histogram", Object.assign(logParams(), { buckets: buckets })).then(function (res) {
       if (my !== reqSeq.volume) return;

@@ -99,8 +99,8 @@ def test_text_search_reraises_lock_errors(storage):
     # A transient lock must surface as an error (caller retries), never
     # silently degrade into different results.
     storage.insert_many([_event("lockme")])
-    flaky = _FlakyConn(storage._conn)
-    storage._conn = flaky
+    flaky = _FlakyConn(storage._rconn)
+    storage._rconn = flaky
     with pytest.raises(sqlite3.OperationalError):
         storage.search(text="lockme")
     flaky.calls = 0
@@ -174,7 +174,10 @@ def test_expected_indexes_exist(storage):
         }
     finally:
         conn.close()
-    for expected in ("idx_events_ts", "idx_events_level", "idx_events_trace", "idx_events_type"):
+    for expected in (
+        "idx_events_ts", "idx_events_level_ts", "idx_events_trace",
+        "idx_events_type_ts", "idx_events_source",
+    ):
         assert expected in names
 
 
@@ -513,3 +516,25 @@ def test_histogram_counts_by_bucket_and_severity(storage):
     full = storage.histogram(until=now, buckets=10)
     assert full["since"] == now - 5000
     assert sum(b["total"] for b in full["buckets"]) == 6
+
+
+def test_a_running_read_does_not_hold_up_writes(storage):
+    # A dashboard query in flight (its lock held) must not stall the flush.
+    with storage._rlock:
+        done = threading.Event()
+        t = threading.Thread(target=lambda: (storage.insert_many([_event("w")]), done.set()))
+        t.start()
+        assert done.wait(2), "insert waited on the read lock"
+    t.join()
+    assert storage.count(text="w") == 1
+
+
+def test_metrics_read_the_index_alone(storage):
+    # fetch_requests' expressions must match idx_events_type_ts exactly, or
+    # every metrics poll decodes each request's JSON again.
+    sqls = []
+    storage._rconn.set_trace_callback(sqls.append)
+    storage.fetch_requests(since=0, until=1)
+    storage._rconn.set_trace_callback(None)
+    plan = storage._rconn.execute("EXPLAIN QUERY PLAN " + sqls[-1]).fetchall()
+    assert any("COVERING INDEX idx_events_type_ts" in row[3] for row in plan), plan

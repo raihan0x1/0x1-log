@@ -25,9 +25,22 @@ CREATE TABLE IF NOT EXISTS events (
     data TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);
-CREATE INDEX IF NOT EXISTS idx_events_level ON events (level);
 CREATE INDEX IF NOT EXISTS idx_events_trace ON events (trace_id);
-CREATE INDEX IF NOT EXISTS idx_events_type ON events (type);
+-- (col, ts): an equality filter alone matches most rows ("type = 'request'"),
+-- so a single-column index scans them all and sorts; with ts beside it the
+-- window and ORDER BY ts come straight off the index.
+DROP INDEX IF EXISTS idx_events_level;
+DROP INDEX IF EXISTS idx_events_type;
+CREATE INDEX IF NOT EXISTS idx_events_level_ts ON events (level, ts);
+-- status and duration ride along so metrics (fetch_requests) read the index
+-- alone: decoding every request's JSON was ~80% of a 7-day window's cost.
+CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events (
+    type, ts, json_extract(data, '$.status'), json_extract(data, '$.duration_ms')
+);
+-- Partial: only rows that carry a source, so `sources()` reads a few entries
+-- instead of decoding every row's JSON on each dashboard health poll.
+CREATE INDEX IF NOT EXISTS idx_events_source ON events (json_extract(data, '$.source'))
+    WHERE json_extract(data, '$.source') IS NOT NULL;
 """
 
 _FTS_SCHEMA = """
@@ -110,6 +123,9 @@ class SQLiteStorage:
         self.retention_days = retention_days
         self.timeout = timeout
         self._lock = threading.Lock()
+        # Dashboard reads use their own connection and lock: under WAL a reader
+        # never blocks the writer, so a slow histogram cannot stall the flush.
+        self._rlock = threading.Lock()
         self._closed = True
         self._fts = False
         with self._lock:
@@ -137,9 +153,19 @@ class SQLiteStorage:
             conn.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)};")
             conn.executescript(_SCHEMA)
             self._fts = self._try_enable_fts()
+            rconn = sqlite3.connect(
+                self.path,
+                timeout=self.timeout,
+                check_same_thread=False,
+                isolation_level=None,
+            )
+            rconn.row_factory = sqlite3.Row
+            rconn.execute("PRAGMA query_only=1;")
+            rconn.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)};")
         except Exception:
             conn.close()
             raise
+        self._rconn = rconn
         self._closed = False
 
     @property
@@ -292,8 +318,8 @@ class SQLiteStorage:
             " WHERE json_extract(data, '$.source') IS NOT NULL"
             " ORDER BY src"
         )
-        with self._lock:
-            rows = self._conn.execute(sql).fetchall()
+        with self._rlock:
+            rows = self._rconn.execute(sql).fetchall()
         return [str(r["src"]) for r in rows if r["src"]]
 
     def search(
@@ -320,8 +346,8 @@ class SQLiteStorage:
         )
         sql = f"SELECT e.* FROM events e {join} {where} {order} LIMIT ? OFFSET ?"
         try:
-            with self._lock:
-                rows = self._conn.execute(sql, (*params, limit, offset)).fetchall()
+            with self._rlock:
+                rows = self._rconn.execute(sql, (*params, limit, offset)).fetchall()
         except sqlite3.OperationalError as exc:
             err_msg = str(exc).lower()
             if not text or not self._fts or "locked" in err_msg or "busy" in err_msg:
@@ -334,8 +360,8 @@ class SQLiteStorage:
                 use_fts=False, source=source, after_id=after_id,
             )
             sql = f"SELECT e.* FROM events e {join} {where} {order} LIMIT ? OFFSET ?"
-            with self._lock:
-                rows = self._conn.execute(sql, (*params, limit, offset)).fetchall()
+            with self._rlock:
+                rows = self._rconn.execute(sql, (*params, limit, offset)).fetchall()
         return [_row_to_event(r) for r in rows]
 
     def count(
@@ -357,8 +383,8 @@ class SQLiteStorage:
         )
         sql = f"SELECT COUNT(*) AS n FROM events e {join} {where}"
         try:
-            with self._lock:
-                row = self._conn.execute(sql, params).fetchone()
+            with self._rlock:
+                row = self._rconn.execute(sql, params).fetchone()
         except sqlite3.OperationalError as exc:
             err_msg = str(exc).lower()
             if not text or not self._fts or "locked" in err_msg or "busy" in err_msg:
@@ -368,8 +394,8 @@ class SQLiteStorage:
                 use_fts=False, source=source, after_id=after_id,
             )
             sql = f"SELECT COUNT(*) AS n FROM events e {join} {where}"
-            with self._lock:
-                row = self._conn.execute(sql, params).fetchone()
+            with self._rlock:
+                row = self._rconn.execute(sql, params).fetchone()
         return int(row["n"])
 
     def _filtered_rows(
@@ -394,8 +420,8 @@ class SQLiteStorage:
             )
             sql = build_sql(join, where)
             try:
-                with self._lock:
-                    return self._conn.execute(
+                with self._rlock:
+                    return self._rconn.execute(
                         sql, (*lead_params, *params, *extra_params)
                     ).fetchall()
             except sqlite3.OperationalError as exc:
@@ -473,8 +499,8 @@ class SQLiteStorage:
             " ) g JOIN events e ON e.id = g.last_id"
         )
         params.append(limit)
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
+        with self._rlock:
+            rows = self._rconn.execute(sql, params).fetchall()
         return [
             {
                 "signature": r["sig"],
@@ -489,8 +515,8 @@ class SQLiteStorage:
         """Return the unique trace_id that starts with `prefix`, else None."""
         if not prefix or len(prefix) < 8:
             return None
-        with self._lock:
-            rows = self._conn.execute(
+        with self._rlock:
+            rows = self._rconn.execute(
                 "SELECT DISTINCT trace_id FROM events WHERE trace_id LIKE ? LIMIT 2",
                 (prefix + "%",),
             ).fetchall()
@@ -515,10 +541,10 @@ class SQLiteStorage:
             sql += " AND ts <= ?"
             params.append(until)
         sql += " ORDER BY ts"
-        with self._lock:
+        with self._rlock:
             # Plain tuples: metrics read every request in the window, and
             # sqlite3.Row adds measurable overhead per row.
-            cur = self._conn.cursor()
+            cur = self._rconn.cursor()
             cur.row_factory = None
             rows = cur.execute(sql, params).fetchall()
         return [
@@ -527,8 +553,8 @@ class SQLiteStorage:
         ]
 
     def get(self, event_id: int) -> dict[str, Any] | None:
-        with self._lock:
-            row = self._conn.execute(
+        with self._rlock:
+            row = self._rconn.execute(
                 "SELECT * FROM events WHERE id = ?", (event_id,)
             ).fetchone()
         return _row_to_event(row) if row else None
@@ -566,7 +592,8 @@ class SQLiteStorage:
             return 0
 
     def close(self) -> None:
-        with self._lock:
+        with self._lock, self._rlock:
             if not self._closed:
                 self._closed = True
                 self._conn.close()
+                self._rconn.close()

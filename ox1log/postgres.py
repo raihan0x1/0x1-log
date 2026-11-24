@@ -41,9 +41,14 @@ _SCHEMA_STATEMENTS = (
     data JSONB NOT NULL DEFAULT '{{}}'
 )""",
     f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_ts ON {_TABLE} (ts)",
-    f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_level ON {_TABLE} (level)",
     f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_trace ON {_TABLE} (trace_id)",
-    f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_type ON {_TABLE} (type)",
+    # (col, ts) and the partial source index: see SQLiteStorage's schema.
+    f"DROP INDEX IF EXISTS idx_{_TABLE}_level",
+    f"DROP INDEX IF EXISTS idx_{_TABLE}_type",
+    f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_level_ts ON {_TABLE} (level, ts)",
+    f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_type_ts ON {_TABLE} (type, ts)",
+    f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_source ON {_TABLE} ((data ->> 'source'))"
+    " WHERE (data ->> 'source') IS NOT NULL",
 )
 
 T = TypeVar("T")

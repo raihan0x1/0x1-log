@@ -133,7 +133,9 @@ def fold_logs(
     same `repeat_key` fold into one Repeat (at most REPEAT_MAX events each).
 
     `offset` counts events, not rows; `next_offset` is where the next page starts
-    (None on the last page). A Repeat row is its newest event plus a `repeat`
+    (None on the last page). `next_cursor` ({until, skip}) reaches the same event
+    as `until` plus `offset`, so the next page reads from the ts index instead
+    of skipping every event before it. A Repeat row is its newest event plus a `repeat`
     summary; its events ride along as `events` only when its `first_id` is in
     `expand`.
     """
@@ -141,6 +143,10 @@ def fold_logs(
     runs: list[tuple[int, list[dict[str, Any]]]] = []
     pos = f.offset
     next_offset: int | None = None
+    next_cursor: dict[str, Any] | None = None
+    # Consumed events sharing the newest-unread ts: the cursor's skip.
+    tail_ts: float | None = None
+    tail_same = 0
     # Most pages fold little, so read about two pages first and grow only for long Repeats.
     size = min(f.limit * 2, _FOLD_BATCH_MAX)
     while next_offset is None:
@@ -151,10 +157,16 @@ def fold_logs(
                 last.append(event)
             elif len(runs) == f.limit:
                 next_offset = pos
+                skip = tail_same if tail_ts == event["ts"] else 0
+                next_cursor = {"until": event["ts"], "skip": skip}
                 break
             else:
                 runs.append((pos, [event]))
             pos += 1
+            if event["ts"] == tail_ts:
+                tail_same += 1
+            else:
+                tail_ts, tail_same = event["ts"], 1
         if len(batch) < size:
             break
         size = min(size * 2, _FOLD_BATCH_MAX)
@@ -166,7 +178,7 @@ def fold_logs(
             if row["repeat"]["first_id"] in expand:
                 row["events"] = members
         items.append(row)
-    return {"items": items, "offset": f.offset, "next_offset": next_offset}
+    return {"items": items, "offset": f.offset, "next_offset": next_offset, "next_cursor": next_cursor}
 
 
 def list_sources(storage: Any) -> list[str]:

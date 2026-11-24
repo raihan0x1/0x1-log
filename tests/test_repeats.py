@@ -106,3 +106,32 @@ def test_dashboard_api_serves_repeats(tmp_path):
     assert res["total"] == 3 and res["next_offset"] is None
     assert len(res["items"]) == 1 and "events" not in res["items"][0]
     assert len(opened["items"][0]["events"]) == 3
+
+
+def _walk(storage, step):
+    pages, filt = [], LogFilter(limit=3)
+    while True:
+        page = fold_logs(storage, filt)
+        pages.append([r["id"] for r in page["items"]])
+        if page["next_offset"] is None:
+            assert page["next_cursor"] is None
+            return pages
+        filt = step(filt, page)
+
+
+def test_cursor_pages_match_offset_pages_even_across_tied_timestamps(storage):
+    now = time.time()
+    # Alternating kinds so nothing folds; three events share one ts across a page edge.
+    tied = now - 95  # between events 3 and 7, so pages split the tie
+    events = []
+    for i in range(12):
+        ts = tied if i in (4, 5, 6) else now - 100 + i
+        events.append(_span(f"s{i % 2}", ts))
+    storage.insert_many(events)
+
+    by_offset = _walk(storage, lambda f, p: LogFilter(limit=3, offset=p["next_offset"]))
+    by_cursor = _walk(storage, lambda f, p: LogFilter(
+        limit=3, until=p["next_cursor"]["until"], offset=p["next_cursor"]["skip"]))
+
+    assert by_cursor == by_offset
+    assert sum(len(p) for p in by_cursor) == 12

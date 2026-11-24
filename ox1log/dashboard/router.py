@@ -229,6 +229,7 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
         offset: int = 0,
         repeats: bool = False,
         expand: str | None = None,
+        count: bool = True,
     ) -> dict[str, Any]:
         # Wait for the backlog queued at call time so just-emitted events
         # are visible on the first click instead of the third.
@@ -250,7 +251,9 @@ def create_dashboard_router(collector: Any, token: str) -> APIRouter:
             # Comma list of Repeat first_ids whose events the table shows inline.
             opened = frozenset(int(x) for x in (expand or "").split(",") if x.strip().isdigit())
             page = fold_logs(collector.storage, filt, opened)
-            return {**page, "total": count_logs(collector.storage, filt), "limit": filt.limit}
+            # Scroll batches pass count=false: the total only changes with the filters.
+            total = count_logs(collector.storage, filt) if count else None
+            return {**page, "total": total, "limit": filt.limit}
         return {
             "items": search_logs(collector.storage, filt),
             "total": count_logs(collector.storage, filt),

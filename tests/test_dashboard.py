@@ -487,7 +487,8 @@ def test_logs_histogram_endpoint(client_and_collector):
 
 def test_fonts_are_served_and_cacheable(client_and_collector):
     client, _ = client_and_collector
-    r = client.get("/0x1log/static/overpass.woff2")
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "font/woff2"
-    assert "max-age" in r.headers["cache-control"]
+    for font in ("host-grotesk.woff2", "atkinson-hyperlegible-mono.woff2"):
+        r = client.get(f"/0x1log/static/{font}")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "font/woff2"
+        assert "max-age" in r.headers["cache-control"]

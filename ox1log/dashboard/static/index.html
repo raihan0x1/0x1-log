@@ -4,8 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>0x1LOG</title>
+<meta name="description" content="Logs, errors, metrics and traces of this app, kept in its own storage.">
 <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
-<link rel="preload" href="static/overpass.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="static/host-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="static/atkinson-hyperlegible-mono.woff2" as="font" type="font/woff2" crossorigin>
 <script>
   // Set the theme before first paint so dark mode never flashes light.
   (function () {
@@ -13,6 +15,8 @@
     try { saved = localStorage.getItem("nhl_theme"); } catch (e) { /* ignore */ }
     var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     document.documentElement.setAttribute("data-theme", theme);
+    // Panels that only script can fill stay hidden only when script runs.
+    document.documentElement.classList.add("js");
   })();
 </script>
 <link rel="stylesheet" href="static/styles.css">
@@ -21,9 +25,9 @@
 <header class="band">
   <div class="brand">
     <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M5 21.5h7.5l7-7H27" fill="none" stroke="#78a4ff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M19.5 5v22" fill="none" stroke="#b896ff" stroke-width="3.4" stroke-linecap="round"/>
-      <circle class="hub" cx="19.5" cy="14.5" r="4.4" fill="#14213d" stroke="#ffffff" stroke-width="2.6"/>
+      <path class="bm-1" d="M5 21.5h7.5l7-7H27" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="bm-2" d="M19.5 5v22" fill="none" stroke-width="3.4" stroke-linecap="round"/>
+      <circle class="hub" cx="19.5" cy="14.5" r="4.4" stroke-width="2.6"/>
     </svg>
     <span class="brand-name">0x1LOG</span>
     <span class="brand-version" id="version"></span>
@@ -67,35 +71,37 @@
 
 <main>
   <section id="view-logs" class="view active" role="tabpanel" aria-labelledby="tab-logs" tabindex="0">
-    <form id="log-filters" class="toolbar" autocomplete="off" role="search">
+    <form id="log-filters" class="query" autocomplete="off" role="search">
       <label class="search">
         <span class="sr-only">Search messages</span>
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
         <input type="search" id="f-text" class="field" placeholder="Search messages" aria-keyshortcuts="/">
         <span class="kbd" aria-hidden="true">/</span>
       </label>
-      <select id="f-level" class="field" aria-label="Level">
-        <option value="">All levels</option>
-        <option>DEBUG</option><option>INFO</option><option>WARNING</option>
-        <option>ERROR</option><option>CRITICAL</option>
-      </select>
-      <select id="f-type" class="field" aria-label="Event type">
-        <option value="">All event types</option>
-        <option value="log">Logs</option><option value="request">Requests</option>
-        <option value="error">Errors</option><option value="span">Spans</option>
-      </select>
-      <select id="f-range" class="field" aria-label="Time range">
-        <option value="0">All time</option>
-        <option value="900">Last 15 minutes</option>
-        <option value="3600">Last hour</option>
-        <option value="21600">Last 6 hours</option>
-        <option value="86400">Last 24 hours</option>
-        <option value="604800">Last 7 days</option>
-        <option value="custom" hidden>Selected range</option>
-      </select>
-      <label class="check live" id="live-label"><input type="checkbox" id="f-live"><span class="live-dot" aria-hidden="true"></span>Live tail</label>
       <button type="submit" class="btn primary">Search</button>
-      <button type="button" class="btn quiet" id="f-clear">Clear filters</button>
+      <div class="query-row">
+        <select id="f-level" class="field" aria-label="Level">
+          <option value="">All levels</option>
+          <option>DEBUG</option><option>INFO</option><option>WARNING</option>
+          <option>ERROR</option><option>CRITICAL</option>
+        </select>
+        <select id="f-type" class="field" aria-label="Event type">
+          <option value="">All event types</option>
+          <option value="log">Logs</option><option value="request">Requests</option>
+          <option value="error">Errors</option><option value="span">Spans</option>
+        </select>
+        <select id="f-range" class="field" aria-label="Time range">
+          <option value="0">All time</option>
+          <option value="900">Last 15 minutes</option>
+          <option value="3600">Last hour</option>
+          <option value="21600">Last 6 hours</option>
+          <option value="86400">Last 24 hours</option>
+          <option value="604800">Last 7 days</option>
+          <option value="custom" hidden>Selected range</option>
+        </select>
+        <label class="check live" id="live-label"><input type="checkbox" id="f-live"><span class="live-dot" aria-hidden="true"></span>Live tail</label>
+        <button type="button" class="btn quiet" id="f-clear">Clear filters</button>
+      </div>
     </form>
     <div>
       <span id="sig-chip" class="filter-chip hidden">
@@ -107,22 +113,26 @@
         <button type="button" id="range-chip-clear" aria-label="Remove selected time range"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
       </span>
     </div>
-    <div class="volume" id="volume" aria-label="Event volume over time"></div>
-    <p class="meta" id="logs-meta"></p>
-    <div class="table-wrap">
-      <table id="logs-table">
-        <thead><tr><th scope="col">Time</th><th scope="col">Line</th><th scope="col" class="c-level">Level</th><th scope="col">Message</th><th scope="col" class="c-trace">Trace</th></tr></thead>
-        <tbody id="logs-body"></tbody>
-      </table>
-    </div>
-    <div class="pager">
-      <button type="button" class="btn" id="page-prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Newer</button>
-      <span id="page-info" class="meta"></span>
-      <button type="button" class="btn" id="page-next">Older<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+    <div class="ledger">
+      <div class="ledger-head"><p class="meta" id="logs-meta"></p></div>
+      <div class="volume" id="volume" aria-label="Event volume over time"></div>
+      <button type="button" class="new-pill" id="logs-new" hidden>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg>
+        <span id="logs-new-text"></span>
+      </button>
+      <div class="table-wrap">
+        <table id="logs-table">
+          <thead><tr><th scope="col">Time</th><th scope="col">Line</th><th scope="col" class="c-level">Level</th><th scope="col">Message</th><th scope="col" class="c-trace">Trace</th></tr></thead>
+          <tbody id="logs-body"></tbody>
+        </table>
+      </div>
+      <div class="more" id="logs-more" role="status" hidden></div>
     </div>
   </section>
 
   <section id="view-errors" class="view" role="tabpanel" aria-labelledby="tab-errors" tabindex="0">
+    <div class="errors-head">
+    <p class="meta" id="errors-meta"></p>
     <div class="toolbar">
       <select id="e-window" class="field" aria-label="Error window">
         <option value="0" selected>All retained errors</option>
@@ -132,7 +142,7 @@
       </select>
       <button type="button" class="btn" id="e-refresh">Refresh</button>
     </div>
-    <p class="meta" id="errors-meta"></p>
+    </div>
     <div id="errors-list"></div>
   </section>
 

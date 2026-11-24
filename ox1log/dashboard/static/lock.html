@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>0x1LOG is locked</title>
+<meta name="description" content="Enter the dashboard token to open this app's logs, errors, metrics and traces.">
 <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
 <script>
   (function () {
@@ -19,9 +20,9 @@
   <header class="band">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M5 21.5h7.5l7-7H27" fill="none" stroke="#78a4ff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M19.5 5v22" fill="none" stroke="#b896ff" stroke-width="3.4" stroke-linecap="round"/>
-        <circle class="hub" cx="19.5" cy="14.5" r="4.4" fill="#14213d" stroke="#ffffff" stroke-width="2.6"/>
+        <path class="bm-1" d="M5 21.5h7.5l7-7H27" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="bm-2" d="M19.5 5v22" fill="none" stroke-width="3.4" stroke-linecap="round"/>
+        <circle class="hub" cx="19.5" cy="14.5" r="4.4" stroke-width="2.6"/>
       </svg>
       <span class="brand-name">0x1LOG</span>
     </div>
@@ -29,11 +30,11 @@
   <main class="lock-main">
     <form class="lock-card" id="lock-form" autocomplete="off">
       <h1>This dashboard is locked</h1>
-      <p>Enter the dashboard token from your app's configuration to see its logs, errors, metrics, and traces.</p>
+      <p>Enter the dashboard token from your app’s configuration to see its logs, errors, metrics, and traces.</p>
       <p class="err" id="err" role="alert"></p>
       <label for="token">Dashboard token</label>
       <input class="field" type="password" id="token" autocomplete="current-password" autofocus required>
-      <button type="submit" class="btn primary" id="unlock">Unlock</button>
+      <button type="submit" class="btn primary" id="unlock">Open dashboard</button>
     </form>
   </main>
 <script>
@@ -51,11 +52,11 @@
       if (!t) return;
       err.textContent = "";
       btn.disabled = true;
-      btn.textContent = "Unlocking";
+      btn.textContent = "Opening";
       function reset(message) {
         err.textContent = message;
         btn.disabled = false;
-        btn.textContent = "Unlock";
+        btn.textContent = "Open dashboard";
       }
       fetch(base + "/api/login", {
         method: "POST",

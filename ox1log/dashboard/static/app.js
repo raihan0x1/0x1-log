@@ -20,8 +20,9 @@
   function freshLogFilters(live) {
     return {
       text: "", level: "", type: "", signature: "", range: 0, custom: null,
-      offset: 0, limit: 50, live: !!live,
-      pages: [], expanded: {},
+      limit: 50, live: !!live, expanded: {},
+      // Scroll state: where the next older batch starts, and the newest event shown.
+      cursor: null, headPin: null, newestId: null, newestTs: null,
     };
   }
 
@@ -88,9 +89,8 @@
     copy: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>',
     check: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   };
-  var EMPTY_ROUTE = '<svg viewBox="0 0 120 28" aria-hidden="true"><path d="M6 20H50l12-12H114"/><circle cx="6" cy="20" r="4.5"/><circle cx="114" cy="8" r="4.5"/></svg>';
   function emptyState(title, text) {
-    return "<div class='empty-state'>" + EMPTY_ROUTE + "<strong>" + esc(title) + "</strong>" +
+    return "<div class='empty-state'><strong>" + esc(title) + "</strong>" +
       (text ? "<p>" + esc(text) + "</p>" : "") + "</div>";
   }
 
@@ -286,7 +286,7 @@
     state.view = view;
     $("chart-tip").hidden = true;
     if (opts.focus && t) t.focus();
-    if (view === "logs" && state.logs.live) loadLogs({ silent: true });
+    if (view === "logs" && state.logs.live) loadLogs({ silent: true, live: true });
     if (view === "errors") loadErrors();
     if (view === "metrics") loadMetrics();
     if (view === "trace") {
@@ -589,44 +589,90 @@
       $("range-chip-text").textContent = "From " + fmtTimeShort(f.custom.since) + " to " + fmtTimeShort(f.custom.until);
     }
   }
+  /* The newest batch lives in #logs-body; older batches follow as their own
+     <tbody>, each read from the cursor the batch above returned, so a deep
+     scroll costs what the first batch did. */
+  var MAX_ROWS = 2000;
+  var scrollGen = 0;
+  var loadingMore = false;
+  var moreError = null;
+  function olderBatches() { return Array.prototype.slice.call($("logs-table").querySelectorAll("tbody.older")); }
+  function logRows() { return Array.prototype.slice.call($("logs-table").querySelectorAll("[data-id], [data-repeat]")); }
+  // The table's top has gone under the bar: the reader is below the newest rows.
+  function scrolledAway() { return $("logs-table").getBoundingClientRect().top < 0; }
+  function batchParams(cursor, count) {
+    var f = state.logs;
+    var p = Object.assign(logParams(), {
+      limit: f.limit, repeats: 1, expand: Object.keys(f.expanded).join(","), count: count ? 1 : 0,
+    });
+    if (cursor) { p.until = cursor.until; p.offset = cursor.skip; }
+    return p;
+  }
+  function rowsKey(items) {
+    // A Repeat's newest id and count change as live tail folds new events in.
+    return items.map(function (e) {
+      return e.id + (e.repeat ? "x" + e.repeat.count + (e.events ? "o" : "") : "");
+    }).join(",");
+  }
+  function fillBatch(tb, items) {
+    tb.innerHTML = items.map(logRowsHtml).join("");
+    tb.setAttribute("data-ids", rowsKey(items));
+  }
+  function resetScroll() {
+    var f = state.logs;
+    scrollGen++;
+    olderBatches().forEach(function (tb) { tb.remove(); });
+    f.cursor = null; f.headPin = null; f.newestId = null; f.newestTs = null;
+    moreError = null;
+    showNewPill(0);
+  }
   function loadLogs(opts) {
     var silent = !!(opts && opts.silent);
     var f = state.logs;
-    if (!f.offset) f.pages = [];
-    var params = Object.assign(logParams(), {
-      limit: f.limit, offset: f.offset, repeats: 1, expand: Object.keys(f.expanded).join(","),
-    });
+    var pin = f.headPin;
+    // Live tail must not reshuffle rows someone is reading, nor open a gap above
+    // the older batches: while either holds, it only counts what is new.
+    if (silent && opts.live && (pin || scrolledAway())) return countNew();
     var my = ++reqSeq.logs;
     hideBanner("error");
     renderChips();
     var body = $("logs-body");
-    if (!silent) body.innerHTML = "<tr class='empty-row'><td colspan='5'><p class='meta loading'>Loading events</p></td></tr>";
-    var rows = api("/logs", params).then(function (res) {
+    if (!silent) {
+      resetScroll();
+      pin = null;
+      body.innerHTML = "<tr class='empty-row'><td colspan='5'><p class='meta loading'>Loading events</p></td></tr>";
+      renderMore();
+    }
+    var rows = api("/logs", batchParams(pin, !pin)).then(function (res) {
       if (my !== reqSeq.logs) return;
-      // A Repeat's newest id and count change as live tail folds new events in.
-      var ids = res.items.map(function (e) {
-        return e.id + (e.repeat ? "x" + e.repeat.count + (e.events ? "o" : "") : "");
-      }).join(",");
-      if (silent && body.getAttribute("data-ids") === ids) {
+      if (!pin) {
+        f.cursor = res.next_cursor;
+        f.newestId = res.items.reduce(function (m, e) { return Math.max(m, e.id); }, 0) || null;
+        f.newestTs = res.items.length ? res.items[0].ts : null;
         renderLogsMeta(res);
-        return;
+        showNewPill(0);
       }
+      if (silent && body.getAttribute("data-ids") === rowsKey(res.items)) return;
       var active = document.activeElement;
       var focusSel = active && active.getAttribute && (active.getAttribute("data-repeat")
         ? "tr[data-repeat='" + active.getAttribute("data-repeat") + "']"
         : active.getAttribute("data-id") ? "tr[data-id='" + active.getAttribute("data-id") + "']" : null);
-      body.innerHTML = res.items.length
-        ? res.items.map(logRowsHtml).join("")
-        : "<tr class='empty-row'><td colspan='5'>" + emptyState("No events match these filters",
-            f.text || f.level || f.type || f.signature || f.range || f.custom
-              ? "Widen the time range or clear a filter."
-              : "Events appear here as soon as the app logs, serves a request, or records a span.") + "</td></tr>";
-      body.setAttribute("data-ids", ids);
+      if (res.items.length) {
+        fillBatch(body, res.items);
+      } else {
+        body.innerHTML = "<tr class='empty-row'><td colspan='5'>" + emptyState("No events match these filters",
+          f.text || f.level || f.type || f.signature || f.range || f.custom
+            ? "Widen the time range or clear a filter."
+            : "Events appear here as soon as the app logs, serves a request, or records a span.") + "</td></tr>";
+        body.setAttribute("data-ids", "");
+      }
       if (silent && focusSel) {
-        var el = body.querySelector(focusSel);
+        var el = $("logs-table").querySelector(focusSel);
         if (el) el.focus({ preventScroll: true });
       }
-      renderLogsMeta(res);
+      markSelected();
+      renderMore();
+      if (moreInReach()) loadMore();
     }).catch(function (err) {
       if (my !== reqSeq.logs) return;
       if (err.message !== "unauthorized") showBanner("Could not load events: " + err.message + ". Retry with Search.");
@@ -640,16 +686,94 @@
     return Promise.all([volume, rows]);
   }
   function renderLogsMeta(res) {
-    // Offsets count events while a page holds `limit` rows, so pages are walked, not numbered out of a total.
-    var shown = res.items.reduce(function (n, e) { return n + (e.repeat ? e.repeat.count : 1); }, 0);
-    var start = res.total === 0 ? 0 : res.offset + 1;
-    $("logs-meta").innerHTML = "<strong>" + fmtNum(res.total) + "</strong> " + (res.total === 1 ? "event" : "events") +
-      (res.total ? ", showing " + fmtNum(start) + " to " + fmtNum(res.offset + shown) : "");
-    $("page-info").textContent = "Page " + fmtNum(state.logs.pages.length + 1);
-    $("page-prev").disabled = res.offset <= 0;
-    $("page-next").disabled = res.next_offset == null;
-    state.logs.nextOffset = res.next_offset;
+    if (res.total == null) return;
+    $("logs-meta").innerHTML = "<strong>" + fmtNum(res.total) + "</strong> " + (res.total === 1 ? "event" : "events");
   }
+
+  /* Older batches load as the row below the table comes within reach. */
+  function moreInReach() {
+    var el = $("logs-more");
+    return !el.hidden && el.getBoundingClientRect().top < window.innerHeight + 600;
+  }
+  function loadMore() {
+    var f = state.logs;
+    if (loadingMore || !f.cursor || moreError || logRows().length >= MAX_ROWS || state.view !== "logs") return;
+    loadingMore = true;
+    var gen = scrollGen;
+    var cursor = f.cursor;
+    // From here the newest batch stays put, so live tail cannot open a gap above this one.
+    if (!f.headPin && f.newestTs != null) f.headPin = { until: f.newestTs, skip: 0 };
+    renderMore();
+    api("/logs", batchParams(cursor, false)).then(function (res) {
+      if (gen !== scrollGen) return;
+      var tb = document.createElement("tbody");
+      tb.className = "older";
+      tb.setAttribute("data-until", String(cursor.until));
+      tb.setAttribute("data-skip", String(cursor.skip));
+      fillBatch(tb, res.items);
+      $("logs-table").appendChild(tb);
+      f.cursor = res.next_cursor;
+      markSelected();
+    }).catch(function (err) {
+      if (gen !== scrollGen || err.message === "unauthorized") return;
+      moreError = err.message;
+    }).then(function () {
+      if (gen !== scrollGen) return;
+      loadingMore = false;
+      renderMore();
+      if (moreInReach()) loadMore();
+    });
+  }
+  function renderMore() {
+    var f = state.logs;
+    var el = $("logs-more");
+    var rows = logRows().length;
+    el.hidden = !rows && !loadingMore;
+    var html;
+    if (moreError) {
+      html = "Could not load older events: " + esc(moreError) + ". <button type='button' class='btn small' id='logs-more-retry'>Retry</button>";
+    } else if (loadingMore || (f.cursor && rows < MAX_ROWS)) {
+      html = "<span class='spinner' aria-hidden='true'></span>Loading older events";
+    } else if (f.cursor) {
+      html = "Showing the newest " + fmtNum(MAX_ROWS) + " rows. Pick a bar in the histogram above to read further back.";
+    } else {
+      html = f.text || f.level || f.type || f.signature || f.range || f.custom
+        ? "That is every event in this range."
+        : "That is every retained event.";
+    }
+    el.innerHTML = html;
+  }
+  $("logs-more").addEventListener("click", function (e) {
+    if (!e.target.closest("#logs-more-retry")) return;
+    moreError = null;
+    loadMore();
+  });
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(function (entries) {
+      if (entries.some(function (en) { return en.isIntersecting; })) loadMore();
+    }, { rootMargin: "600px 0px" }).observe($("logs-more"));
+  } else {
+    window.addEventListener("scroll", function () { if (moreInReach()) loadMore(); }, { passive: true });
+  }
+
+  /* New events while reading below the newest rows: counted, never pushed in. */
+  function countNew() {
+    var f = state.logs;
+    if (f.newestId == null) return Promise.resolve();
+    return api("/logs", Object.assign(logParams(), { after_id: f.newestId, limit: 1 })).then(function (res) {
+      showNewPill(res.total || 0);
+    }).catch(function () { /* the next tick retries */ });
+  }
+  function showNewPill(n) {
+    var pill = $("logs-new");
+    pill.hidden = !n;
+    if (n) $("logs-new-text").textContent = fmtNum(n) + (n === 1 ? " new event" : " new events");
+  }
+  $("logs-new").addEventListener("click", function () {
+    loadLogs();
+    var top = $("view-logs").getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, top - 80) });
+  });
 
   /* Event volume: the line's traffic over the selected range. */
   var lastVolume = null;
@@ -715,7 +839,6 @@
     // Narrowing to a past slice makes live tail meaningless: pause it.
     if (state.logs.live) setLive(false, { quiet: true });
     state.logs.custom = { since: x.ts, until: x.ts + lastVolume.width };
-    state.logs.offset = 0;
     $("f-range").value = "custom";
     $("chart-tip").hidden = true;
     loadLogs();
@@ -739,7 +862,6 @@
       state.logs.custom = null;
     }
     state.logs.signature = "";
-    state.logs.offset = 0;
     loadLogs();
   }
   $("log-filters").addEventListener("submit", function (e) { e.preventDefault(); applyLogFilters(); });
@@ -756,25 +878,11 @@
   });
   $("sig-chip-clear").addEventListener("click", function () {
     state.logs.signature = "";
-    state.logs.offset = 0;
     loadLogs();
   });
   $("range-chip-clear").addEventListener("click", function () {
     state.logs.custom = null;
-    state.logs.offset = 0;
     $("f-range").value = String(state.logs.range || 0);
-    loadLogs();
-  });
-  $("page-prev").addEventListener("click", function () {
-    state.logs.offset = state.logs.pages.pop() || 0;
-    if (state.logs.offset === 0 && !state.logs.custom && readLocal("nhl_live") !== "0") setLive(true);
-    else loadLogs();
-  });
-  $("page-next").addEventListener("click", function () {
-    if (state.logs.nextOffset == null) return;
-    setLive(false, { quiet: true });
-    state.logs.pages.push(state.logs.offset);
-    state.logs.offset = state.logs.nextOffset;
     loadLogs();
   });
   function setLive(on, opts) {
@@ -784,20 +892,19 @@
     if (!(opts && opts.quiet)) writeLocal("nhl_live", on ? "1" : "0");
     if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; }
     if (on) {
-      state.logs.offset = 0;
-      if (state.logs.custom) {
+        if (state.logs.custom) {
         state.logs.custom = null;
         $("f-range").value = String(state.logs.range || 0);
       }
-      poll("live", function () { return loadLogs({ silent: true }); });
+      poll("live", function () { return loadLogs({ silent: true, live: true }); });
       state.liveTimer = setInterval(function () {
-        if (state.view === "logs") poll("live", function () { return loadLogs({ silent: true }); });
+        if (state.view === "logs") poll("live", function () { return loadLogs({ silent: true, live: true }); });
       }, 2000);
     }
   }
   $("f-live").addEventListener("change", function (e) { setLive(e.target.checked); });
 
-  $("logs-body").addEventListener("click", function (e) {
+  $("logs-table").addEventListener("click", function (e) {
     var copyBtn = e.target.closest("[data-copy]");
     if (copyBtn) {
       e.stopPropagation();
@@ -821,12 +928,26 @@
     var open = state.logs.expanded;
     if (open[firstId]) delete open[firstId];
     else open[firstId] = true;
-    loadLogs({ silent: true });
+    var head = $("logs-table").querySelector("tr[data-repeat='" + firstId + "']");
+    var tb = head && head.closest("tbody.older");
+    if (!tb) { loadLogs({ silent: true }); return; }
+    // An older batch reloads from its own cursor, so the batches around it stay put.
+    var gen = scrollGen;
+    var cursor = { until: Number(tb.getAttribute("data-until")), skip: Number(tb.getAttribute("data-skip")) };
+    api("/logs", batchParams(cursor, false)).then(function (res) {
+      if (gen !== scrollGen) return;
+      fillBatch(tb, res.items);
+      markSelected();
+      var again = $("logs-table").querySelector("tr[data-repeat='" + firstId + "']");
+      if (again) again.focus({ preventScroll: true });
+    }).catch(function (err) {
+      if (err.message !== "unauthorized") showBanner("Could not open that repeat: " + err.message + ".");
+    });
   }
 
   /* Keyboard: "/" searches, j/k walk the current list, Enter opens, Esc closes. */
   function currentRows() {
-    var root = state.view === "trace" ? $("trace-list") : state.view === "logs" ? $("logs-body") : null;
+    var root = state.view === "trace" ? $("trace-list") : state.view === "logs" ? $("logs-table") : null;
     return root ? Array.prototype.slice.call(root.querySelectorAll("[data-id], [data-repeat]")) : [];
   }
   document.addEventListener("keydown", function (e) {
@@ -886,12 +1007,26 @@
     state.selectedId = null;
     markSelected();
     if (opts && opts.restoreFocus && lastFocus && document.contains(lastFocus)) lastFocus.focus();
-    if (state.logs.live && state.view === "logs") loadLogs({ silent: true });
+    if (state.logs.live && state.view === "logs") loadLogs({ silent: true, live: true });
   }
-  function section(label, copyLabel, bodyHtml) {
+  function section(label, copyLabel, bodyHtml, metaHtml) {
     return "<div class='detail-section'><div class='detail-section-head'><h3>" + esc(label) + "</h3>" +
+      (metaHtml ? "<span class='section-meta'>" + metaHtml + "</span>" : "") +
       (copyLabel ? "<button type='button' class='btn small copy-section-btn' data-copy-pre='1'>" + ICON.copy + esc(copyLabel) + "</button>" : "") +
       "</div>" + bodyHtml + "</div>";
+  }
+  // "4 headers, 58 B": what a request or response carried, before reading it.
+  function messageMeta(headers, body) {
+    var parts = [];
+    var n = headers ? Object.keys(headers).length : 0;
+    if (n) parts.push(n + (n === 1 ? " header" : " headers"));
+    if (body !== undefined && body !== null) {
+      var text = typeof body === "string" ? body : JSON.stringify(body);
+      var bytes = new TextEncoder().encode(text).length;
+      parts.push(bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB");
+      if (body && typeof body === "object" && body._truncated) parts.push("truncated");
+    }
+    return "<span class='mono'>" + esc(parts.join(", ")) + "</span>";
   }
   function headersHtml(h) {
     if (!h || !Object.keys(h).length) return "";
@@ -972,11 +1107,13 @@
       add("Upstream parent", d.parent_id, true);
       if (d.request_headers || d.request_body !== undefined) {
         sections += section("Request", "Copy request", headersHtml(d.request_headers) +
-          (d.request_body !== undefined ? "<pre class='payload-block'>" + formatPayload(d.request_body) + "</pre>" : ""));
+          (d.request_body !== undefined ? "<pre class='payload-block'>" + formatPayload(d.request_body) + "</pre>" : ""),
+          messageMeta(d.request_headers, d.request_body));
       }
       if (d.response_headers || d.response_body !== undefined) {
         sections += section("Response", "Copy response", headersHtml(d.response_headers) +
-          (d.response_body !== undefined ? "<pre class='payload-block'>" + formatPayload(d.response_body) + "</pre>" : ""));
+          (d.response_body !== undefined ? "<pre class='payload-block'>" + formatPayload(d.response_body) + "</pre>" : ""),
+          (d.status != null ? statusChip(d.status) + " " : "") + messageMeta(d.response_headers, d.response_body));
       }
     } else if (e.type === "span") {
       head = d.name || displayMessage(e);
@@ -1083,7 +1220,7 @@
     copyText(text, btn);
   });
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && state.logs.live && state.view === "logs") loadLogs({ silent: true });
+    if (!document.hidden && state.logs.live && state.view === "logs") loadLogs({ silent: true, live: true });
   });
 
   /* Errors: the disruption list */

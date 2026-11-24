@@ -1,9 +1,12 @@
 Bundled fonts (SIL Open Font License 1.1), latin subsets from Fontsource 5.3.0:
-- overpass.woff2: Overpass (variable weight), @fontsource-variable/overpass
-- overpass-mono.woff2: Overpass Mono (variable weight), @fontsource-variable/overpass-mono
-Source: https://github.com/RedHatOfficial/Overpass
+- host-grotesk.woff2: Host Grotesk (variable weight), @fontsource-variable/host-grotesk
+  Source: https://github.com/Element-Type/HostGrotesk
+- atkinson-hyperlegible-mono.woff2: Atkinson Hyperlegible Mono (variable weight), @fontsource-variable/atkinson-hyperlegible-mono
+  Source: https://github.com/googlefonts/atkinson-hyperlegible-next-mono
 
-Copyright 2021 The Overpass Project Authors (https://github.com/RedHatOfficial/Overpass) Overpass-Italic[wght].ttf: Copyright 2021 The Overpass Project Authors (https://github.com/RedHatOfficial/Overpass)
+Copyright 2023 The Host Grotesk Project Authors (https://github.com/Element-Type/HostGrotesk) HostGrotesk-Italic[wght].ttf: Copyright 2023 The Host Grotesk Project Authors (https://github.com/Element-Type/HostGrotesk)
+Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono) AtkinsonHyperlegibleMono-Italic[wght].ttf: Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)
+
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

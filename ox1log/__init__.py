@@ -11,7 +11,7 @@ from .postgres import PostgresStorage
 from .redis_storage import RedisStorage
 from .span import AISpan, Span, ai_span, span
 
-__version__ = "1.4.2"
+__version__ = "1.4.3"
 __all__ = [
     "__version__",
     "AISpan",

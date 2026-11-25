@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "0x1-log"
-version = "1.4.2"
+version = "1.4.3"
 description = "0x1LOG: Embedded observability for FastAPI: searchable logs, error tracking, alerts, metrics, and tracing"
 readme = "README.md"
 requires-python = ">=3.10"

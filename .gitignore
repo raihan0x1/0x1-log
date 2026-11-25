@@ -42,9 +42,6 @@ htmlcov/
 *.db-shm
 *.db-wal
 
-# uv lockfile (libraries resolve fresh; only apps commit locks)
-uv.lock
-
 # Editors / OS
 .idea/
 .vscode/

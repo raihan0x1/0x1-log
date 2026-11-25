@@ -15,21 +15,21 @@ usage() {
 Usage: ./scripts/release.sh [patch|minor|major|X.Y.Z] [options]
 
 Interactive if no version argument is passed. Runs scripts/release_version.py
-(bumps pyproject.toml, ox1log/__init__.py, and CHANGELOG.md), runs
-./scripts/check.sh, commits the release bump, and pushes to origin so
+(bumps pyproject.toml, ox1log/__init__.py, and CHANGELOG.md), refreshes uv.lock,
+runs ./scripts/check.sh, commits the release bump, and pushes to origin so
 .github/workflows/publish.yml builds, publishes to PyPI, tags vX.Y.Z, and
 creates the GitHub Release.
 
 Options:
   --dry-run         Preview actions without modifying files or remote
-  --skip-checks     Skip ./scripts/check.sh before committing and pushing
+  --skip-checks     Skip SonarCloud gate & ./scripts/check.sh before pushing
   -y, --yes         Skip confirmation prompt
   --allow-non-main  Allow releasing from a branch other than main
   -h, --help        Show this help
 EOF
 }
 
-while [ "$#" -gt 0 ]; do
+while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
     --skip-checks) SKIP_CHECKS=1 ;;
@@ -45,7 +45,7 @@ while [ "$#" -gt 0 ]; do
       exit 1
       ;;
     *)
-      if [ -n "$TARGET" ]; then
+      if [[ -n "$TARGET" ]]; then
         echo "Unexpected extra argument: $1" >&2
         usage >&2
         exit 1
@@ -57,12 +57,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [ "$BRANCH" != "main" ] && [ "$ALLOW_NON_MAIN" -eq 0 ]; then
+if [[ "$BRANCH" != "main" && "$ALLOW_NON_MAIN" -eq 0 ]]; then
   echo "ERROR: Current branch is '${BRANCH}'. Switch to 'main' or pass --allow-non-main." >&2
   exit 1
 fi
 
-if [ -n "$(git status --porcelain)" ]; then
+if [[ -n "$(git status --porcelain)" ]]; then
   echo "ERROR: Working tree has uncommitted changes. Commit or stash them first." >&2
   git status -s >&2
   exit 1
@@ -73,10 +73,54 @@ git fetch --tags origin --quiet
 
 if git rev-parse --verify "origin/${BRANCH}" >/dev/null 2>&1; then
   BEHIND="$(git rev-list --count "HEAD..origin/${BRANCH}")"
-  if [ "$BEHIND" -gt 0 ]; then
+  if [[ "$BEHIND" -gt 0 ]]; then
     echo "ERROR: Local '${BRANCH}' is ${BEHIND} commit(s) behind origin/${BRANCH}. Pull/rebase first." >&2
     exit 1
   fi
+fi
+
+if [[ "$SKIP_CHECKS" -eq 0 ]]; then
+  echo "==> Checking SonarCloud Quality Gate on ${BRANCH}"
+  HEAD_SHA="$(git rev-parse HEAD)"
+  python3 - "$HEAD_SHA" <<'PY'
+import json, sys, urllib.request
+
+head_sha = sys.argv[1]
+base = "https://sonarcloud.io/api"
+qg_url = f"{base}/qualitygates/project_status?projectKey=nahiarhd_nahiarhdlog&branch=main"
+ana_url = f"{base}/project_analyses/search?project=nahiarhd_nahiarhdlog&branch=main&ps=1"
+
+try:
+    with urllib.request.urlopen(qg_url, timeout=5) as r:
+        qg = json.loads(r.read().decode())["projectStatus"]
+    with urllib.request.urlopen(ana_url, timeout=5) as r:
+        analyses = json.loads(r.read().decode()).get("analyses", [])
+except Exception as exc:
+    print(f"WARNING: Could not query SonarCloud Quality Gate ({exc}); continuing.")
+    sys.exit(0)
+
+status = qg.get("status")
+analyzed_rev = analyses[0].get("revision", "") if analyses else ""
+
+if status == "OK":
+    print(f"SonarCloud Quality Gate: OK (rev={analyzed_rev[:7]})")
+    sys.exit(0)
+
+failing = [
+    f"{c.get('metricKey')}={c.get('actualValue')} (threshold {c.get('errorThreshold')})"
+    for c in qg.get("conditions", [])
+    if c.get("status") != "OK"
+]
+if analyzed_rev == head_sha:
+    print(f"ERROR: SonarCloud Quality Gate failed on HEAD ({head_sha[:7]}): {', '.join(failing)}", file=sys.stderr)
+    print("See: https://sonarcloud.io/dashboard?id=nahiarhd_nahiarhdlog&branch=main", file=sys.stderr)
+    sys.exit(1)
+
+print(
+    f"WARNING: Latest SonarCloud analysis ({analyzed_rev[:7]}) has status={status} "
+    f"({', '.join(failing)}), while HEAD is {head_sha[:7]} (unpushed local commits). Proceeding..."
+)
+PY
 fi
 
 CURRENT_VER="$(python3 -c '
@@ -95,7 +139,7 @@ NEXT_PATCH="${CUR_MAJOR}.${CUR_MINOR}.$((CUR_PATCH + 1))"
 NEXT_MINOR="${CUR_MAJOR}.$((CUR_MINOR + 1)).0"
 NEXT_MAJOR="$((CUR_MAJOR + 1)).0.0"
 
-if [ -z "$TARGET" ]; then
+if [[ -z "$TARGET" ]]; then
   echo ""
   echo "Current version : ${CURRENT_VER}"
   echo "Latest git tag  : ${LATEST_TAG:-none}"
@@ -140,7 +184,7 @@ if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ "$SKIP_CHECKS" -eq 1 ]; then
+if [[ "$SKIP_CHECKS" -eq 1 ]]; then
   CHECKS_LABEL="skipped (--skip-checks)"
 else
   CHECKS_LABEL="./scripts/check.sh"
@@ -150,19 +194,19 @@ echo ""
 echo "Release plan:"
 echo "  Branch  : ${BRANCH}"
 echo "  Version : ${CURRENT_VER} -> ${NEXT_VER}"
-echo "  Files   : pyproject.toml, ox1log/__init__.py, CHANGELOG.md"
+echo "  Files   : pyproject.toml, ox1log/__init__.py, CHANGELOG.md, uv.lock"
 echo "  Commit  : chore(release): bump version to ${NEXT_VER}"
 echo "  Checks  : ${CHECKS_LABEL}"
 echo "  Push    : git push origin ${BRANCH}"
 echo "  Publish : .github/workflows/publish.yml -> PyPI + tag ${TAG} + GitHub Release"
 echo ""
 
-if [ "$DRY_RUN" -eq 1 ]; then
+if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] No changes made."
   exit 0
 fi
 
-if [ "$AUTO_YES" -eq 0 ]; then
+if [[ "$AUTO_YES" -eq 0 ]]; then
   printf "Proceed to release %s and trigger PyPI publish? [y/N]: " "$NEXT_VER"
   read -r CONFIRM
   case "$CONFIRM" in
@@ -176,22 +220,25 @@ fi
 
 BUMPED=0
 cleanup_on_err() {
-  if [ "$BUMPED" -eq 1 ]; then
+  if [[ "$BUMPED" -eq 1 ]]; then
     echo "Release failed; reverting version bump files..." >&2
-    git checkout -- pyproject.toml ox1log/__init__.py CHANGELOG.md
+    git checkout -- pyproject.toml ox1log/__init__.py CHANGELOG.md uv.lock
   fi
 }
 trap cleanup_on_err ERR
 
 echo "==> Updating version to ${NEXT_VER}"
 python3 scripts/release_version.py "$NEXT_VER"
+if command -v uv >/dev/null 2>&1; then
+  uv lock
+fi
 BUMPED=1
 
-if [ "$SKIP_CHECKS" -eq 0 ]; then
+if [[ "$SKIP_CHECKS" -eq 0 ]]; then
   ./scripts/check.sh
 fi
 
-git add pyproject.toml ox1log/__init__.py CHANGELOG.md
+git add pyproject.toml ox1log/__init__.py CHANGELOG.md uv.lock
 git commit -m "chore(release): bump version to ${NEXT_VER}"
 BUMPED=0
 

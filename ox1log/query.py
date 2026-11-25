@@ -251,14 +251,12 @@ def fold_logs(
         for event in batch:
             ekey = repeat_key(event)
             # shortcut: template folding only merges consecutive logs from one call site, not interleaved multi-callsite cycles; upgrade if interleaved cycles become noisy.
-            if runs and _try_extend_run(runs[-1], event, ekey):
-                pass
-            elif len(runs) == f.limit:
-                next_offset = pos
-                skip = tail_same if tail_ts == event["ts"] else 0
-                next_cursor = {"until": event["ts"], "skip": skip}
-                break
-            else:
+            if not (runs and _try_extend_run(runs[-1], event, ekey)):
+                if len(runs) == f.limit:
+                    next_offset = pos
+                    skip = tail_same if tail_ts == event["ts"] else 0
+                    next_cursor = {"until": event["ts"], "skip": skip}
+                    break
                 runs.append(_FoldRun(pos, [event], ekey, _log_site(event)))
             pos += 1
             if event["ts"] == tail_ts:

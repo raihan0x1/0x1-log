@@ -53,17 +53,20 @@ def build_app(db_path: str = "demo.db") -> FastAPI:
 
     @app.delete("/documents/{file_id}")
     def delete_document(file_id: str):
-        log.info("Deleted document %s (%s)", file_id, "kontrak.pdf")
+        safe_id = file_id.replace("\r", "").replace("\n", "")
+        log.info("Deleted document %s (%s)", safe_id, "kontrak.pdf")
         return {"id": file_id, "ok": True}
 
     @app.delete("/folders/{folder_id}")
     def delete_folder(folder_id: str):
-        log.info("Deleted folder %s (%s)", folder_id, "Hukum")
+        safe_id = folder_id.replace("\r", "").replace("\n", "")
+        log.info("Deleted folder %s (%s)", safe_id, "Hukum")
         return {"id": folder_id, "ok": True}
 
     @app.patch("/documents/{file_id}")
     def update_document(file_id: str):
-        log.info("Updated document %s (%s)", file_id, "kontrak.pdf")
+        safe_id = file_id.replace("\r", "").replace("\n", "")
+        log.info("Updated document %s (%s)", safe_id, "kontrak.pdf")
         return {"id": file_id, "ok": True}
 
     return app

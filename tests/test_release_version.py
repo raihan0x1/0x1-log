@@ -96,3 +96,34 @@ def test_empty_unreleased_takes_notes_from_commits_since_the_tag(repo):
     (repo / "CHANGELOG.md").write_text(EMPTY_CHANGELOG.replace("1.3.1", "1.3.2"))
     with pytest.raises(SystemExit, match="nothing to release"):
         release_version.release(repo, "patch", datetime.date.today())
+
+
+def test_uv_lock_is_tracked_and_matches_pyproject_version():
+    lock_path = ROOT / "uv.lock"
+    assert lock_path.is_file()
+    ignored = {
+        line.strip()
+        for line in (ROOT / ".gitignore").read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "uv.lock" not in ignored
+    version = re.search(
+        r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.MULTILINE
+    ).group(1)
+    assert re.search(
+        rf'(?ms)^\[\[package\]\]\s+name = "0x1-log"\s+version = "{re.escape(version)}"',
+        lock_path.read_text(),
+    )
+
+
+def test_workflows_pin_actions_to_full_sha_and_use_locked_uv():
+    for name in ("ci.yml", "publish.yml"):
+        text = (ROOT / ".github" / "workflows" / name).read_text()
+        assert re.search(r"^permissions:\s*\n\s+contents:\s*read\b", text, re.MULTILINE), name
+        uses_lines = re.findall(r"^\s*-?\s*uses:\s*(\S+)", text, re.MULTILINE)
+        assert uses_lines, name
+        for target in uses_lines:
+            assert re.search(r"@[0-9a-f]{40}$", target), f"{name}: unpinned action {target}"
+        assert "pip install -e ." not in text, name
+        assert "uv sync --locked --no-build" in text, name
+

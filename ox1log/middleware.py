@@ -7,7 +7,7 @@ Works with any ASGI app; the FastAPI adapter only mounts it.
 from __future__ import annotations
 
 import json
-import random
+import secrets
 import time
 import traceback
 from typing import Any, Awaitable, Callable, MutableMapping
@@ -329,7 +329,11 @@ class LoggingMiddleware:
             current_trace_id.reset(token)
         duration_ms = (time.perf_counter() - start) * 1000
         status = status_holder.get("status", 500)
-        if status >= 500 or random.random() < self.sample_rate:
+        if (
+            status >= 500
+            or self.sample_rate >= 1.0
+            or (self.sample_rate > 0.0 and secrets.randbelow(10_000) / 10_000 < self.sample_rate)
+        ):
             self.collector.emit(request_event(status, duration_ms))
 
     @staticmethod

@@ -297,3 +297,86 @@ def test_multipart_bodies_are_not_stored_raw(tmp_path):
         body = collector.storage.search(event_type="request")[0]["data"]["request_body"]
     assert body.startswith("<multipart/form-data body")
     assert "hunter2" not in body
+
+
+def test_basic_app_sanitizes_newlines_in_logged_path_ids(tmp_path):
+    import importlib.util
+    import logging
+    from pathlib import Path
+
+    from ox1log.storage import SQLiteStorage
+
+    spec = importlib.util.spec_from_file_location(
+        "examples_basic_app",
+        Path(__file__).resolve().parent.parent / "examples" / "basic_app.py",
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    db_path = tmp_path / "demo.db"
+    prev_level = mod.log.level
+    mod.log.setLevel(logging.INFO)
+    try:
+        app = mod.build_app(str(db_path))
+        with TestClient(app) as client:
+            assert client.delete("/documents/doc-1%0AFORGED").status_code == 200
+            assert client.delete("/folders/fld-1%0D%0AFORGED").status_code == 200
+            assert client.patch("/documents/doc-2%0AFORGED").status_code == 200
+    finally:
+        mod.log.setLevel(prev_level)
+
+    storage = SQLiteStorage(str(db_path))
+    try:
+        logs = storage.search(event_type="log", limit=20)
+    finally:
+        storage.close()
+    assert len(logs) >= 3
+    assert all("\n" not in row["message"] and "\r" not in row["message"] for row in logs)
+
+
+def test_sampling_fractional_uses_secrets_and_keeps_errors(tmp_path, monkeypatch):
+    import secrets
+
+    from ox1log.collector import Collector
+    from ox1log.middleware import LoggingMiddleware
+
+    draws = iter([1000, 9000] * 6)
+    monkeypatch.setattr(secrets, "randbelow", lambda n: next(draws))
+
+    collector = Collector(str(tmp_path / "half.db")).start()
+    app = FastAPI()
+
+    @app.get("/item/{idx}")
+    def item(idx: int):
+        return {"idx": idx}
+
+    app.add_middleware(LoggingMiddleware, collector=collector, sample_rate=0.5)
+    try:
+        with TestClient(app) as client:
+            for i in range(12):
+                assert client.get(f"/item/{i}").status_code == 200
+        assert collector.flush()
+        paths = [r["data"]["path"] for r in collector.storage.search(event_type="request", limit=50)]
+        assert set(paths) == {f"/item/{i}" for i in range(0, 12, 2)}
+    finally:
+        collector.stop()
+
+    monkeypatch.setattr(secrets, "randbelow", lambda n: (_ for _ in ()).throw(AssertionError("should not draw")))
+    full_collector = Collector(str(tmp_path / "full.db")).start()
+    full_app = FastAPI()
+
+    @full_app.get("/full")
+    def full():
+        return {"ok": True}
+
+    full_app.add_middleware(LoggingMiddleware, collector=full_collector, sample_rate=1.0)
+    try:
+        with TestClient(full_app) as client:
+            assert client.get("/full").status_code == 200
+        assert full_collector.flush()
+        assert full_collector.storage.count(event_type="request", text="/full") == 1
+    finally:
+        full_collector.stop()
+
+

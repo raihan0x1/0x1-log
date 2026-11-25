@@ -20,10 +20,10 @@ else
 fi
 
 echo "==> Running test suite"
-if [ -x ".venv/bin/pytest" ]; then
+if [[ -x ".venv/bin/pytest" ]]; then
   .venv/bin/pytest
 elif command -v uv >/dev/null 2>&1; then
-  uv run --with pytest pytest
+  uv run --no-sync --no-build --with pytest pytest
 elif command -v pytest >/dev/null 2>&1; then
   pytest
 else

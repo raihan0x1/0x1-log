@@ -520,7 +520,7 @@
     var d = e.data || {};
     if (e.type === "span") return d.name || displayMessage(e);
     if (e.type === "request") return (d.method || "") + " " + (d.path || "");
-    return displayMessage(e);
+    return (e.repeat && e.repeat.label) || displayMessage(e);
   }
   function repeatMsgHtml(e) {
     var r = e.repeat;

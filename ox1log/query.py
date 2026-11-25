@@ -6,6 +6,7 @@ This is the API the dashboard (and user code) reads through.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -106,14 +107,107 @@ def repeat_key(event: dict[str, Any]) -> tuple[Any, ...]:
     return (kind, name, event.get("level"), d.get("status"))
 
 
-def _repeat_summary(members: list[dict[str, Any]], offset: int) -> dict[str, Any]:
+def _log_site(event: dict[str, Any]) -> tuple[str, str, int] | None:
+    if event.get("type") != "log":
+        return None
+    d = event.get("data") or {}
+    pathname = d.get("pathname")
+    lineno = d.get("lineno")
+    if not pathname or not isinstance(lineno, int) or isinstance(lineno, bool) or lineno <= 0:
+        return None
+    return (str(d.get("logger") or ""), os.path.basename(str(pathname)), lineno)
+
+
+def _tokenize_log(message: Any) -> list[str]:
+    return str(message or "").split("\n", 1)[0][:512].split()
+
+
+def _has_alpha(tokens: list[str | None]) -> bool:
+    return any(t is not None and any(c.isalpha() for c in t) for t in tokens)
+
+
+def _merge_template(tpl: list[str | None], toks: list[str]) -> list[str | None] | None:
+    if not tpl or not toks:
+        return None
+    if len(tpl) == len(toks):
+        merged = [a if a == b else None for a, b in zip(tpl, toks)]
+        fixed = sum(1 for t in merged if t is not None)
+        if fixed * 2 >= len(merged) and _has_alpha(merged):
+            return merged
+        return None
+    limit = min(len(tpl), len(toks))
+    p = 0
+    while p < limit and tpl[p] is not None and tpl[p] == toks[p]:
+        p += 1
+    s = 0
+    while s < limit - p and tpl[-1 - s] is not None and tpl[-1 - s] == toks[-1 - s]:
+        s += 1
+    merged = list(tpl[:p]) + [None] + (list(tpl[len(tpl) - s :]) if s else [])
+    if (p + s) * 2 >= limit and _has_alpha(merged):
+        return merged
+    return None
+
+
+def _format_template(tpl: list[str | None]) -> str:
+    out: list[str] = []
+    for t in tpl:
+        if t is None:
+            if not out or out[-1] != "*":
+                out.append("*")
+        else:
+            out.append(t)
+    return " ".join(out)
+
+
+@dataclass
+class _FoldRun:
+    offset: int
+    members: list[dict[str, Any]]
+    key: tuple[Any, ...]
+    site: tuple[str, str, int] | None
+    template: list[str | None] | None = None
+    varied: bool = False
+
+
+def _try_extend_run(run: _FoldRun, event: dict[str, Any], ekey: tuple[Any, ...]) -> bool:
+    if len(run.members) >= REPEAT_MAX:
+        return False
+    if not run.varied and ekey == run.key:
+        run.members.append(event)
+        if run.site is not None and _log_site(event) != run.site:
+            run.site = None
+        return True
+    if run.site is None or event.get("type") != "log":
+        return False
+    first = run.members[0]
+    if (
+        event.get("level") != first.get("level")
+        or (event.get("data") or {}).get("status") != (first.get("data") or {}).get("status")
+        or _log_site(event) != run.site
+    ):
+        return False
+    if run.template is None:
+        run.template = _tokenize_log(first.get("message"))
+    merged = _merge_template(run.template, _tokenize_log(event.get("message")))
+    if merged is None:
+        return False
+    run.members.append(event)
+    run.template = merged
+    if event.get("message") != first.get("message"):
+        run.varied = True
+    return True
+
+
+def _repeat_summary(
+    members: list[dict[str, Any]], offset: int, label: str | None = None
+) -> dict[str, Any]:
     durations = [
         float(m["data"]["duration_ms"])
         for m in members
         if (m.get("data") or {}).get("duration_ms") is not None
     ]
     tokens = sum(int((m.get("data") or {}).get("total_tokens") or 0) for m in members)
-    return {
+    summary: dict[str, Any] = {
         "count": len(members),
         "offset": offset,
         "first_id": members[-1]["id"],
@@ -124,6 +218,9 @@ def _repeat_summary(members: list[dict[str, Any]], offset: int) -> dict[str, Any
         "total_tokens": tokens or None,
         "traces": len({m["trace_id"] for m in members if m.get("trace_id")}),
     }
+    if label is not None:
+        summary["label"] = label
+    return summary
 
 
 def fold_logs(
@@ -140,7 +237,7 @@ def fold_logs(
     `expand`.
     """
     f = filt.normalized()
-    runs: list[tuple[int, list[dict[str, Any]]]] = []
+    runs: list[_FoldRun] = []
     pos = f.offset
     next_offset: int | None = None
     next_cursor: dict[str, Any] | None = None
@@ -152,16 +249,17 @@ def fold_logs(
     while next_offset is None:
         batch = search_logs(storage, replace(f, limit=size, offset=pos, after_id=None))
         for event in batch:
-            last = runs[-1][1] if runs else None
-            if last and len(last) < REPEAT_MAX and repeat_key(last[0]) == repeat_key(event):
-                last.append(event)
+            ekey = repeat_key(event)
+            # shortcut: template folding only merges consecutive logs from one call site, not interleaved multi-callsite cycles; upgrade if interleaved cycles become noisy.
+            if runs and _try_extend_run(runs[-1], event, ekey):
+                pass
             elif len(runs) == f.limit:
                 next_offset = pos
                 skip = tail_same if tail_ts == event["ts"] else 0
                 next_cursor = {"until": event["ts"], "skip": skip}
                 break
             else:
-                runs.append((pos, [event]))
+                runs.append(_FoldRun(pos, [event], ekey, _log_site(event)))
             pos += 1
             if event["ts"] == tail_ts:
                 tail_same += 1
@@ -171,12 +269,17 @@ def fold_logs(
             break
         size = min(size * 2, _FOLD_BATCH_MAX)
     items = []
-    for start, members in runs:
-        row = dict(members[0])
-        if len(members) > 1:
-            row["repeat"] = _repeat_summary(members, start)
+    for run in runs:
+        row = dict(run.members[0])
+        if len(run.members) > 1:
+            label = (
+                _format_template(run.template)
+                if run.varied and run.template
+                else None
+            )
+            row["repeat"] = _repeat_summary(run.members, run.offset, label=label)
             if row["repeat"]["first_id"] in expand:
-                row["events"] = members
+                row["events"] = run.members
         items.append(row)
     return {"items": items, "offset": f.offset, "next_offset": next_offset, "next_cursor": next_cursor}
 

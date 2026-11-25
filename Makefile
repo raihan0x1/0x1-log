@@ -1,4 +1,10 @@
-.PHONY: release-version
+.PHONY: check release release-version
+
+check:
+	./scripts/check.sh
+
+release:
+	./scripts/release.sh $(BUMP)
 
 # Bump pyproject, ox1log.__version__ and CHANGELOG (BUMP=patch|minor|major|X.Y.Z, default patch).
 # Commit and push to main afterwards: .github/workflows/publish.yml publishes the new version to PyPI.

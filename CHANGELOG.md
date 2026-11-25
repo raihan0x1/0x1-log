@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-26
+
+### Added
+- Rows filter, scroll box and windowed log table
+
 ## [1.4.3] - 2026-11-25
 
 ### Fixed

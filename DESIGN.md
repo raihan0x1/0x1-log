@@ -116,7 +116,7 @@ Tokens live in `ox1log/dashboard/static/tokens.css` (graphite, on `:root`) and `
 ## Layout
 
 - The container caps at 1440px and centres; gutters 24px (16px under 48rem).
-- **Logs:** the query (search and Search on one row, filters beneath), then the ledger. The table scrolls on its own: older batches of 50 rows load from a cursor as the row beneath the table comes within 600px, up to 2,000 rows; past that the histogram is how you jump back in time.
+- **Logs:** the query (search and Search on one row; level, type, range and rows filters beneath), then the ledger. Wider than 48rem and at least 36rem tall, the ledger fills the window and the table scrolls in its own box; phones and short windows keep the page scroll. Older batches of 50 rows load from a cursor as the row beneath the table comes within 600px, up to the rows filter (200, 1,000 by default, or all); at the cap the scroll row offers Show all rows. A batch more than 3,000px from view is parked as one spacer row of the same height and refilled from memory, so all rows cost what a few hundred do.
 - **Live tail** refreshes the newest batch only while the reader is at the top and nothing older is loaded. Otherwise it counts new events into a pill under the sticky table head, and the reader's rows never move.
 - **Inspector:** a 440 to 600px side panel; at 75rem and wider the main column gives way instead of being covered. Under 48rem it covers the screen.
 - **Errors:** the total leads as a reading, then signatures as a ledger (count, signature in mono, last seen, message).
@@ -135,7 +135,7 @@ Cards and panels 10px, controls 6px, chips and keycaps 4px, the new-events pill 
 
 - **Top bar:** brand mark and wordmark, four tabs (active: ink with a 2px amber underline), then status, Lock and theme. Status is a chip whose tint is its state (good: ok tint; minor: red outline; severe and down: red tint).
 - **Buttons:** primary amber fill with `accent-ink`; default `paper-2` with a `rule-2` outline; quiet transparent. Disabled drops to `paper` with a `rule` outline, muted ink and a not-allowed cursor; a primary in flight keeps its place on `accent-soft` with a progress cursor.
-- **Fields:** `paper-3` inside a `rule-2` outline at 6px; focus turns the outline amber.
+- **Fields:** `paper-3` inside a `rule-2` outline at 6px; focus turns the outline amber. Selects carry a muted chevron; with a fine pointer their picker opens as a `paper-2` panel with an amber check, and touch keeps the native picker.
 - **Table rows:** hover `color-mix(ink 5%)`, selected `accent` 14% into `paper-2`, CRITICAL and 5xx rows on `bad-soft`, Repeat members indented on `paper`.
 - **Repeats:** consecutive events with the same kind, name, level and status fold into one row with a count; opening one reloads only its batch.
 - **Inspector:** kind, method and status chips; Copy JSON, Copy as cURL and View trace; facts as a key and value list; Request and Response each headed with header count and body size (Response also with its status chip), headers then body on `paper-3`. Redacted values arrive as `[REDACTED]` from the middleware.

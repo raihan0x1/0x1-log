@@ -97,7 +97,12 @@
           <option value="21600">Last 6 hours</option>
           <option value="86400">Last 24 hours</option>
           <option value="604800">Last 7 days</option>
-          <option value="custom" hidden>Selected range</option>
+          <option value="custom" hidden disabled>Selected range</option>
+        </select>
+        <select id="f-rows" class="field" aria-label="Rows to show">
+          <option value="200">200 rows</option>
+          <option value="1000" selected>1,000 rows</option>
+          <option value="0">All rows</option>
         </select>
         <label class="check live" id="live-label"><input type="checkbox" id="f-live"><span class="live-dot" aria-hidden="true"></span>Live tail</label>
         <button type="button" class="btn quiet" id="f-clear">Clear filters</button>
@@ -120,13 +125,13 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg>
         <span id="logs-new-text"></span>
       </button>
-      <div class="table-wrap">
+      <div class="table-wrap" id="logs-wrap">
         <table id="logs-table">
           <thead><tr><th scope="col">Time</th><th scope="col">Line</th><th scope="col" class="c-level">Level</th><th scope="col">Message</th><th scope="col" class="c-trace">Trace</th></tr></thead>
           <tbody id="logs-body"></tbody>
         </table>
+        <div class="more" id="logs-more" role="status" hidden></div>
       </div>
-      <div class="more" id="logs-more" role="status" hidden></div>
     </div>
   </section>
 

@@ -287,6 +287,7 @@
     $("chart-tip").hidden = true;
     if (opts.focus && t) t.focus();
     if (view === "logs" && state.logs.live) loadLogs({ silent: true, live: true });
+    if (view === "logs") windowBatches();
     if (view === "errors") loadErrors();
     if (view === "metrics") loadMetrics();
     if (view === "trace") {
@@ -592,14 +593,24 @@
   /* The newest batch lives in #logs-body; older batches follow as their own
      <tbody>, each read from the cursor the batch above returned, so a deep
      scroll costs what the first batch did. */
-  var MAX_ROWS = 2000;
   var scrollGen = 0;
   var loadingMore = false;
   var moreError = null;
+  // How many rows the reader asked for: 200, 1,000, or all (0).
+  function rowCap() { return Number($("f-rows").value) || Infinity; }
   function olderBatches() { return Array.prototype.slice.call($("logs-table").querySelectorAll("tbody.older")); }
   function logRows() { return Array.prototype.slice.call($("logs-table").querySelectorAll("[data-id], [data-repeat]")); }
-  // The table's top has gone under the bar: the reader is below the newest rows.
-  function scrolledAway() { return $("logs-table").getBoundingClientRect().top < 0; }
+  // Wide windows scroll the table in its own box; narrow ones scroll the page. Same query as styles.css:
+  // guessing from overflow could pick the box on a phone, whose observer always sees the row beneath.
+  var boxQuery = window.matchMedia("(width > 48rem) and (height >= 36rem)");
+  function scroller() { return boxQuery.matches ? $("logs-wrap") : null; }
+  // The stretch of the window the rows scroll through.
+  function viewRect() { var box = scroller(); return box ? box.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }; }
+  // The reader is below the newest rows.
+  function scrolledAway() {
+    var box = scroller();
+    return box ? box.scrollTop > 0 : $("logs-table").getBoundingClientRect().top < 0;
+  }
   function batchParams(cursor, count) {
     var f = state.logs;
     var p = Object.assign(logParams(), {
@@ -615,6 +626,8 @@
     }).join(",");
   }
   function fillBatch(tb, items) {
+    tb._items = items;
+    tb._parked = false;
     tb.innerHTML = items.map(logRowsHtml).join("");
     tb.setAttribute("data-ids", rowsKey(items));
   }
@@ -624,6 +637,7 @@
     olderBatches().forEach(function (tb) { tb.remove(); });
     f.cursor = null; f.headPin = null; f.newestId = null; f.newestTs = null;
     moreError = null;
+    $("logs-wrap").scrollTop = 0;
     showNewPill(0);
   }
   function loadLogs(opts) {
@@ -672,7 +686,7 @@
       }
       markSelected();
       renderMore();
-      if (moreInReach()) loadMore();
+      rearmMore();
     }).catch(function (err) {
       if (my !== reqSeq.logs) return;
       if (err.message !== "unauthorized") showBanner("Could not load events: " + err.message + ". Retry with Search.");
@@ -691,29 +705,80 @@
   }
 
   /* Older batches load as the row below the table comes within reach. */
+  // A position check right after a batch lands misses a scroll back to the bottom in that same
+  // frame, and the observer then never fires again. Re-observing reports the state on the next frame.
+  var moreObservers = [];
+  function rearmMore() {
+    if (!moreObservers.length) { if (moreInReach()) loadMore(); return; }
+    moreObservers.forEach(function (io) { io.unobserve($("logs-more")); io.observe($("logs-more")); });
+  }
   function moreInReach() {
     var el = $("logs-more");
-    return !el.hidden && el.getBoundingClientRect().top < window.innerHeight + 600;
+    return !el.hidden && el.getBoundingClientRect().top < viewRect().bottom + 600;
   }
+  /* Windowing: an older batch far from the view keeps its items but swaps its rows for one spacer
+     row exactly as tall, so "All rows" lays out only the few hundred rows near the reader. */
+  var PARK_PX = 3000;
+  function itemRows(items) {
+    return items.reduce(function (n, e) { return n + 1 + (e.events ? e.events.length : 0); }, 0);
+  }
+  // Rows loaded so far, parked batches included.
+  function shownRows() {
+    return olderBatches().reduce(function (n, tb) { return n + (tb._parked ? itemRows(tb._items) : 0); }, logRows().length);
+  }
+  var windowQueued = false;
+  function windowBatches() {
+    if (windowQueued) return;
+    windowQueued = true;
+    requestAnimationFrame(function () {
+      windowQueued = false;
+      // A hidden table measures zero everywhere, which would refill every batch.
+      if (state.view !== "logs") return;
+      var view = viewRect();
+      var active = document.activeElement;
+      // All reads before any write, so the pass lays out once.
+      olderBatches().map(function (tb) {
+        var r = tb.getBoundingClientRect();
+        return {
+          tb: tb, h: r.height, near: r.bottom > view.top - PARK_PX && r.top < view.bottom + PARK_PX,
+          keep: tb.contains(active) || !!tb.querySelector("tr.selected"),
+        };
+      }).forEach(function (b) {
+        if (b.near && b.tb._parked) fillBatch(b.tb, b.tb._items);
+        // The batches holding focus and the open event stay, so j/k, Esc and screen readers never land on a spacer.
+        else if (!b.near && !b.tb._parked && !b.keep) {
+          b.tb._parked = true;
+          b.tb.innerHTML = "<tr class='parked' aria-hidden='true'><td colspan='5' style='height:" + b.h + "px'></td></tr>";
+        }
+      });
+    });
+  }
+  [window, $("logs-wrap")].forEach(function (t) { t.addEventListener("scroll", windowBatches, { passive: true }); });
+  window.addEventListener("resize", windowBatches);
   function loadMore() {
     var f = state.logs;
-    if (loadingMore || !f.cursor || moreError || logRows().length >= MAX_ROWS || state.view !== "logs") return;
+    var shown = shownRows();
+    if (loadingMore || !f.cursor || moreError || shown >= rowCap() || state.view !== "logs") return;
     loadingMore = true;
     var gen = scrollGen;
     var cursor = f.cursor;
     // From here the newest batch stays put, so live tail cannot open a gap above this one.
     if (!f.headPin && f.newestTs != null) f.headPin = { until: f.newestTs, skip: 0 };
     renderMore();
-    api("/logs", batchParams(cursor, false)).then(function (res) {
+    var params = batchParams(cursor, false);
+    params.limit = Math.min(params.limit, rowCap() - shown);
+    api("/logs", params).then(function (res) {
       if (gen !== scrollGen) return;
       var tb = document.createElement("tbody");
       tb.className = "older";
       tb.setAttribute("data-until", String(cursor.until));
       tb.setAttribute("data-skip", String(cursor.skip));
+      tb.setAttribute("data-limit", String(params.limit));
       fillBatch(tb, res.items);
       $("logs-table").appendChild(tb);
       f.cursor = res.next_cursor;
       markSelected();
+      windowBatches();
     }).catch(function (err) {
       if (gen !== scrollGen || err.message === "unauthorized") return;
       moreError = err.message;
@@ -721,21 +786,21 @@
       if (gen !== scrollGen) return;
       loadingMore = false;
       renderMore();
-      if (moreInReach()) loadMore();
+      rearmMore();
     });
   }
   function renderMore() {
     var f = state.logs;
     var el = $("logs-more");
-    var rows = logRows().length;
+    var rows = shownRows();
     el.hidden = !rows && !loadingMore;
     var html;
     if (moreError) {
       html = "Could not load older events: " + esc(moreError) + ". <button type='button' class='btn small' id='logs-more-retry'>Retry</button>";
-    } else if (loadingMore || (f.cursor && rows < MAX_ROWS)) {
+    } else if (loadingMore || (f.cursor && rows < rowCap())) {
       html = "<span class='spinner' aria-hidden='true'></span>Loading older events";
     } else if (f.cursor) {
-      html = "Showing the newest " + fmtNum(MAX_ROWS) + " rows. Pick a bar in the histogram above to read further back.";
+      html = "Showing the newest " + fmtNum(rows) + " rows. <button type='button' class='btn small' id='logs-more-all'>Show all rows</button>";
     } else {
       html = f.text || f.level || f.type || f.signature || f.range || f.custom
         ? "That is every event in this range."
@@ -744,17 +809,32 @@
     el.innerHTML = html;
   }
   $("logs-more").addEventListener("click", function (e) {
-    if (!e.target.closest("#logs-more-retry")) return;
+    if (e.target.closest("#logs-more-all")) {
+      // Lifts the cap in place: the rows already read stay where they are.
+      $("f-rows").value = "0";
+      writeLocal("nhl_rows", "0");
+    } else if (!e.target.closest("#logs-more-retry")) {
+      return;
+    }
     moreError = null;
     loadMore();
   });
-  if ("IntersectionObserver" in window) {
-    new IntersectionObserver(function (entries) {
-      if (entries.some(function (en) { return en.isIntersecting; })) loadMore();
-    }, { rootMargin: "600px 0px" }).observe($("logs-more"));
-  } else {
-    window.addEventListener("scroll", function () { if (moreInReach()) loadMore(); }, { passive: true });
-  }
+  // Two roots: the window when the page scrolls, the table's box when it scrolls on its own.
+  [null, $("logs-wrap")].forEach(function (root) {
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        // When the page scrolls, the row always sits inside the box, so only the live root counts.
+        if (root !== scroller()) return;
+        if (entries.some(function (en) { return en.isIntersecting; })) loadMore();
+      }, { root: root, rootMargin: "600px 0px" });
+      io.observe($("logs-more"));
+      moreObservers.push(io);
+    } else {
+      (root || window).addEventListener("scroll", function () { if (moreInReach()) loadMore(); }, { passive: true });
+    }
+  });
+  // Switching between box and page scroll can leave the row in reach without any observer seeing a change.
+  boxQuery.addEventListener("change", rearmMore);
 
   /* New events while reading below the newest rows: counted, never pushed in. */
   function countNew() {
@@ -867,6 +947,11 @@
   $("log-filters").addEventListener("submit", function (e) { e.preventDefault(); applyLogFilters(); });
   // Selects apply immediately; only the text box waits for Enter or Search.
   ["f-level", "f-type", "f-range"].forEach(function (id) { $(id).addEventListener("change", applyLogFilters); });
+  // The row count is the reader's preference, not a filter: kept across reloads and Clear filters.
+  $("f-rows").addEventListener("change", function (e) {
+    writeLocal("nhl_rows", e.target.value);
+    loadLogs();
+  });
   $("f-clear").addEventListener("click", function () {
     $("f-text").value = "";
     $("f-level").value = "";
@@ -934,7 +1019,10 @@
     // An older batch reloads from its own cursor, so the batches around it stay put.
     var gen = scrollGen;
     var cursor = { until: Number(tb.getAttribute("data-until")), skip: Number(tb.getAttribute("data-skip")) };
-    api("/logs", batchParams(cursor, false)).then(function (res) {
+    var params = batchParams(cursor, false);
+    // The size it loaded at: a last batch trimmed to the row cap must not grow into the next one.
+    params.limit = Number(tb.getAttribute("data-limit"));
+    api("/logs", params).then(function (res) {
       if (gen !== scrollGen) return;
       fillBatch(tb, res.items);
       markSelected();
@@ -1703,6 +1791,8 @@
   initToken();
   poll("health", loadHealth);
   poll("status", loadStatus);
+  var savedRows = readLocal("nhl_rows");
+  Array.prototype.forEach.call($("f-rows").options, function (o) { if (o.value === savedRows) o.selected = true; });
   var savedLive = readLocal("nhl_live");
   if (savedLive === null || savedLive === "1") setLive(true);
   else loadLogs();

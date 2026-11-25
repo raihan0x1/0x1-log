@@ -45,6 +45,8 @@
   --bar-h: 52px;
   --insp-w: 600px;
   --radius-chip: 4px;
+  /* Muted ink clears 3:1 on every surface; the hairline rule-2 did not. */
+  --scrollbar-thumb: var(--color-muted);
 
   /* Read by app.js. */
   --surface: var(--color-paper-2);
@@ -106,7 +108,7 @@ td, .num { font-variant-numeric: tabular-nums; }
 .hidden { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 svg.icon { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-* { scrollbar-width: thin; scrollbar-color: var(--color-rule-2) transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; transition: none; }
 
 /* Top bar: the shell */
@@ -212,11 +214,47 @@ main { max-width: var(--container); margin: 0 auto; padding: var(--space-lg) var
   background: var(--color-paper-3); color: var(--color-ink); font-size: var(--text-sm);
   transition: border-color var(--dur-micro) var(--ease-out);
 }
-select.field { padding-right: var(--space-xl); cursor: pointer; }
+/* The native arrow ignores the palette and hugs the edge: a chevron drawn in
+   muted ink from two hairline diagonals, inset to match the left padding. */
+select.field {
+  appearance: none; padding-right: var(--space-xl); cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent calc(50% - 0.8px), var(--color-muted) calc(50% - 0.8px), var(--color-muted) calc(50% + 0.8px), transparent calc(50% + 0.8px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.8px), var(--color-muted) calc(50% - 0.8px), var(--color-muted) calc(50% + 0.8px), transparent calc(50% + 0.8px));
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+  background-position: calc(100% - var(--space-sm) - 5px) 52%, calc(100% - var(--space-sm)) 52%;
+}
+/* Where the picker itself can be styled (Chromium, Safari 27), it joins the
+   console: the panel surface, hairline and radius of the status popover.
+   Fine pointers only, so phones keep their native wheel. */
+@supports (appearance: base-select) {
+  @media (pointer: fine) {
+    select.field, select.field::picker(select) { appearance: base-select; }
+    select.field { display: inline-flex; align-items: center; }
+    select.field::picker-icon { display: none; }
+    select.field:open { border-color: var(--color-focus); }
+    select.field::picker(select) {
+      margin-block: var(--space-2xs); padding: var(--space-2xs);
+      background: var(--color-paper-2); color: var(--color-ink);
+      border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-card);
+    }
+    select.field option { min-height: 32px; padding: 0 var(--space-xs); gap: var(--space-xs); border-radius: var(--radius-chip); cursor: pointer; }
+    select.field option:hover { background: var(--color-hover); }
+    select.field option:checked { background: var(--color-select); font-weight: 500; }
+    select.field option:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+    select.field option::checkmark { color: var(--color-accent); }
+    /* base-select no longer sizes to the longest option: fixed widths keep the row from shifting. */
+    #f-level, #f-rows { width: 8.5rem; }
+    #f-type, #m-window { width: 10.5rem; }
+    #f-range { width: 11rem; }
+    #e-window { width: 12.5rem; }
+  }
+}
 .field:hover { border-color: var(--color-muted); }
 .field:focus-visible { outline-offset: 0; border-color: var(--color-focus); }
 .field::placeholder { color: var(--color-muted); opacity: 1; }
-.field:disabled { color: var(--color-muted); background: var(--color-paper); cursor: not-allowed; }
+.field:disabled { color: var(--color-muted); background-color: var(--color-paper); cursor: not-allowed; }
 .search { position: relative; flex: 1 1 320px; min-width: 200px; display: flex; }
 .search .field { width: 100%; padding-left: var(--space-xl); }
 .search svg.icon { position: absolute; left: var(--space-sm); top: 50%; margin-top: calc(-1 * var(--space-xs)); color: var(--color-muted); pointer-events: none; }
@@ -317,6 +355,8 @@ tbody td { padding: 0 var(--space-sm); height: var(--row-h); border-bottom: var(
 tbody td:first-child { padding-left: var(--space-md); }
 tbody td:last-child { padding-right: var(--space-md); }
 tbody tr:last-child td { border-bottom: 0; }
+/* A batch scrolled far away: one row as tall as the rows it held. */
+tbody tr.parked td { padding: 0; border: 0; }
 tbody tr[data-id], tbody tr[data-repeat] { cursor: pointer; }
 tbody tr[data-id]:hover, tbody tr[data-repeat]:hover { background: var(--color-hover); }
 tbody tr[data-id]:active { background: var(--color-paper-3); }
@@ -385,6 +425,31 @@ tr:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
 .new-pill[hidden] { display: none; }
 .new-pill:hover { background: color-mix(in oklab, var(--color-accent) 28%, var(--color-paper-2)); }
 .new-pill:active { background: var(--color-accent-soft); }
+
+/* Wide, tall windows: the ledger fills the window and the table scrolls in its
+   own box, so the query and the histogram stay in reach while reading. Phones
+   and short windows keep the page scroll, where a nested scroller would trap.
+   app.js scroller() tests this same query. */
+@media (width > 48rem) and (height >= 36rem) {
+  /* The shell is one window-tall column, so a banner shortens the ledger instead of pushing it off screen.
+     Child steps only in :has(): a descendant form re-checks body for every row added (5x the style time). */
+  body:has(> main > #view-logs.active) { display: flex; flex-direction: column; height: 100dvh; }
+  body:has(> main > #view-logs.active) > main { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: var(--space-lg); }
+  #view-logs.active { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #view-logs .ledger { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: clip; }
+  #view-logs .table-wrap {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-gutter: stable; scroll-padding-top: var(--row-h);
+  }
+  #view-logs thead th { top: 0; }
+  /* The box does not scroll the pill away: it rests just under the header row. */
+  #view-logs .new-pill { position: relative; top: 44px; }
+}
+@supports not (scrollbar-color: auto) {
+  #view-logs .table-wrap { scrollbar-width: auto; }
+  #view-logs .table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+  #view-logs .table-wrap::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+}
 
 /* Event kind: the label, keyed by a short bar in the kind's colour (the waterfall uses the same colours). */
 .stn { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--text-xs); font-weight: 500; color: var(--color-muted); white-space: nowrap; }
@@ -672,7 +737,6 @@ tr:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
   main { padding: var(--space-md) var(--space-md) var(--space-xl); }
   .query { grid-template-columns: minmax(0, 1fr); grid-template-areas: "search" "filters" "go"; }
   .query-row select { flex: 1 1 calc(50% - var(--space-xs)); }
-  .query-row #f-range { flex-basis: 100%; }
   .query .btn.primary { width: 100%; }
   .table-wrap { overflow-x: auto; }
   thead th { position: static; }

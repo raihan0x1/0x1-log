@@ -86,6 +86,28 @@ def test_repeat_is_capped_and_runs_across_batches(storage, monkeypatch):
     assert page["items"][1]["repeat"]["offset"] == 4
 
 
+def test_events_written_while_folding_do_not_repeat_rows(storage, monkeypatch):
+    # Live traffic lands between the fold's reads; continuing by a count would re-read folded events.
+    monkeypatch.setattr(query, "_FOLD_BATCH_MAX", 3)
+    now = time.time()
+    storage.insert_many([_span("a", now - 100 + i) for i in range(5)] + [_span("b", now - 90 + i) for i in range(4)]
+                        + [_span("c", now - 80 + i) for i in range(3)])
+    expected = fold_logs(storage, LogFilter(limit=50))
+    read = storage.search
+
+    def search_then_write(*a, **k):
+        rows = read(*a, **k)
+        storage.insert_many([_span("live", time.time() + 1000)])
+        return rows
+
+    monkeypatch.setattr(storage, "search", search_then_write)
+
+    page = fold_logs(storage, LogFilter(limit=50))
+
+    assert _names(page) == _names(expected) == [("c", 3), ("b", 4), ("a", 5)]
+    assert [r["id"] for r in page["items"]] == [r["id"] for r in expected["items"]]
+
+
 def test_dashboard_api_serves_repeats(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

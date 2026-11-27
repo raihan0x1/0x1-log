@@ -1005,7 +1005,8 @@
       return;
     }
     var head = e.target.closest("tr[data-repeat]");
-    if (head) { toggleRepeat(head.getAttribute("data-repeat")); return; }
+    // A double or triple click is one request to open, not toggles that cancel each other.
+    if (head) { if (e.detail <= 1) toggleRepeat(head.getAttribute("data-repeat")); return; }
     var row = e.target.closest("tr[data-id]");
     if (row) openDetail(row.getAttribute("data-id"));
   });
@@ -1014,21 +1015,34 @@
     if (open[firstId]) delete open[firstId];
     else open[firstId] = true;
     var head = $("logs-table").querySelector("tr[data-repeat='" + firstId + "']");
+    // The reload behind a toggle can take seconds on a wide range: answer the click now. The repaint clears it.
+    if (head) {
+      head.setAttribute("aria-busy", "true");
+      head.querySelector(".rep-toggle").innerHTML = "<span class='spinner'></span>";
+    }
     var tb = head && head.closest("tbody.older");
-    if (!tb) { loadLogs({ silent: true }); return; }
+    if (!tb) {
+      // Forget the painted key so the reload repaints, and so clears the spinner, even when the rows come back unchanged.
+      $("logs-body").removeAttribute("data-ids");
+      loadLogs({ silent: true });
+      return;
+    }
     // An older batch reloads from its own cursor, so the batches around it stay put.
     var gen = scrollGen;
+    // Each reload asks for every open Repeat, so only this batch's newest answer is current: an older one landing late would undo a toggle.
+    var my = tb._seq = (tb._seq || 0) + 1;
     var cursor = { until: Number(tb.getAttribute("data-until")), skip: Number(tb.getAttribute("data-skip")) };
     var params = batchParams(cursor, false);
     // The size it loaded at: a last batch trimmed to the row cap must not grow into the next one.
     params.limit = Number(tb.getAttribute("data-limit"));
     api("/logs", params).then(function (res) {
-      if (gen !== scrollGen) return;
+      if (gen !== scrollGen || my !== tb._seq) return;
       fillBatch(tb, res.items);
       markSelected();
       var again = $("logs-table").querySelector("tr[data-repeat='" + firstId + "']");
       if (again) again.focus({ preventScroll: true });
     }).catch(function (err) {
+      if (my !== tb._seq) return;
       if (err.message !== "unauthorized") showBanner("Could not open that repeat: " + err.message + ".");
     });
   }

@@ -381,6 +381,8 @@ td.msg .rep-count {
   border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-chip); color: var(--color-ink); font-variant-numeric: tabular-nums;
 }
 tr.repeat-head { cursor: pointer; }
+tr.repeat-head[aria-busy="true"] { cursor: progress; }
+td.msg .rep-toggle .spinner { display: inline-block; width: 0.8em; height: 0.8em; vertical-align: -0.1em; }
 tr.repeat-child td { background: var(--color-paper); }
 tr.repeat-child td.msg { padding-left: var(--space-xl); }
 td.msg .exc-type { font-weight: 600; color: var(--color-bad-ink); }

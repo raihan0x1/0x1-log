@@ -247,7 +247,13 @@ def fold_logs(
     # Most pages fold little, so read about two pages first and grow only for long Repeats.
     size = min(f.limit * 2, _FOLD_BATCH_MAX)
     while next_offset is None:
-        batch = search_logs(storage, replace(f, limit=size, offset=pos, after_id=None))
+        # Later reads continue from the last event read, not by a count: events written meanwhile would shift a count back onto folded ones.
+        read = (
+            replace(f, limit=size, offset=pos, after_id=None)
+            if tail_ts is None
+            else replace(f, limit=size, until=tail_ts, offset=tail_same + (f.offset if tail_ts == f.until else 0), after_id=None)
+        )
+        batch = search_logs(storage, read)
         for event in batch:
             ekey = repeat_key(event)
             # shortcut: template folding only merges consecutive logs from one call site, not interleaved multi-callsite cycles; upgrade if interleaved cycles become noisy.
